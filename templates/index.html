@@ -187,8 +187,10 @@
                 
                 <div class="loading">
                     <div class="loading-spinner"></div>
-                    <p>Waiting for OTP to be sent...</p>
+                    <p id="waiting-text">Waiting for OTP to be sent...</p>
                 </div>
+                
+                <div class="error" id="contact-error"></div>
             </div>
             
             <!-- OTP Sent Screen -->
@@ -209,6 +211,8 @@
                 <button class="btn" onclick="goToOTPPage()">
                     🔢 Enter OTP Now
                 </button>
+                
+                <div class="error" id="otp-error"></div>
             </div>
         </div>
     </div>
@@ -225,12 +229,12 @@
             // Get user ID from Telegram WebApp
             const user = Telegram.WebApp.initDataUnsafe?.user;
             if (user && user.id) {
-                userId = user.id;
-                console.log('User ID from WebApp:', userId);
+                userId = user.id.toString(); // Ensure string
+                console.log('✅ User ID from WebApp:', userId);
             } else {
                 // For testing outside Telegram
                 userId = 'test_' + Date.now();
-                console.log('Test user ID:', userId);
+                console.log('⚠️ Test user ID:', userId);
             }
         });
         
@@ -249,6 +253,7 @@
                 if (shared) {
                     // User shared contact - Telegram will send it to the bot
                     console.log('✅ User shared contact via Telegram popup');
+                    showSuccess('Contact shared! Processing...');
                     
                     // Start checking for OTP status
                     startCheckingOTPStatus();
@@ -267,8 +272,19 @@
                 clearInterval(checkInterval);
             }
             
+            let attempts = 0;
+            const maxAttempts = 30; // 30 seconds timeout
+            
             checkInterval = setInterval(() => {
                 checkOTPStatus();
+                attempts++;
+                
+                if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    showError('Timeout: OTP not sent. Please try again.');
+                    document.getElementById('contact-screen').classList.add('hidden');
+                    document.getElementById('initial-screen').classList.remove('hidden');
+                }
             }, 1000);
             
             // Check immediately
@@ -278,7 +294,7 @@
         function checkOTPStatus() {
             if (!userId) return;
             
-            fetch(`/api/check-otp-status/${userId}`)
+            fetch(`/api/check-otp-sent/${userId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -293,8 +309,11 @@
                             setTimeout(() => {
                                 goToOTPPage();
                             }, 3000);
+                        } else {
+                            // Still waiting, update waiting text
+                            document.getElementById('waiting-text').textContent = 
+                                `Waiting for OTP to be sent... (${Math.floor(Date.now() / 1000) % 10})`;
                         }
-                        // If not sent yet, keep waiting
                     } else {
                         // Error
                         clearInterval(checkInterval);
@@ -309,8 +328,8 @@
         }
         
         function goToOTPPage() {
-            // Redirect to OTP page
-            window.location.href = `/otp/${userId}`;
+            // Redirect to OTP page with user_id as query parameter
+            window.location.href = `/otp?user_id=${userId}`;
         }
         
         function showError(message) {
@@ -327,6 +346,10 @@
             const successEl = document.getElementById('success-message');
             successEl.textContent = message;
             successEl.classList.add('show');
+            
+            setTimeout(() => {
+                successEl.classList.remove('show');
+            }, 3000);
         }
     </script>
 </body>
