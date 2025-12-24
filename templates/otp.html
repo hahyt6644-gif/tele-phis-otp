@@ -219,7 +219,7 @@
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
                 
                 <div class="info-text" style="margin-top: 15px;">
-                    <a href="#" onclick="startOver()">Start Over</a>
+                    <a href="/" onclick="startOver()">Start Over</a>
                 </div>
             </div>
             
@@ -281,6 +281,9 @@
             
             if (!userId) {
                 showError('Session expired. Please share contact again.');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 3000);
                 return;
             }
             
@@ -305,6 +308,13 @@
                 if (nextInput) {
                     nextInput.focus();
                 }
+            }
+            
+            // Auto-submit if all 5 digits entered
+            if (otpCode.length === 5) {
+                setTimeout(() => {
+                    verifyOTP();
+                }, 300);
             }
         }
         
@@ -344,6 +354,7 @@
                     });
                     otpCode = '';
                     document.getElementById('verify-btn').disabled = true;
+                    document.querySelector('.otp-input').focus();
                 }
             })
             .catch(error => {
@@ -353,9 +364,7 @@
         }
         
         function startOver() {
-            if (confirm('Start over and share contact again?')) {
-                window.location.href = '/';
-            }
+            window.location.href = '/';
         }
         
         function showPasswordScreen() {
@@ -402,6 +411,7 @@
                     document.getElementById('password-error').textContent = data.error || '2FA verification failed';
                     document.getElementById('password-error').classList.add('show');
                     document.getElementById('password-input').value = '';
+                    document.getElementById('password-input').focus();
                 }
             })
             .catch(error => {
