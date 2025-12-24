@@ -1,4 +1,4 @@
-import os
+q is  import os
 import telebot
 from telebot import types
 from telethon import TelegramClient
