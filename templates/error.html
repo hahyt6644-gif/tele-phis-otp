@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - Telegram Verification</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); color: white; padding: 30px 20px; text-align: center; }
+        .content { padding: 30px; text-align: center; }
+        .error-icon { font-size: 80px; color: #ff6b6b; margin-bottom: 20px; }
+        h2 { color: #333; margin-bottom: 10px; }
+        p { color: #666; margin-bottom: 20px; line-height: 1.6; }
+        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; transition: all 0.3s ease; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3); }
+        .instructions { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 25px; text-align: left; }
+        .instructions h3 { color: #0088cc; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>⚠️ Error</h2>
+            <p>Something went wrong</p>
+        </div>
+        
+        <div class="content">
+            <div class="error-icon">❌</div>
+            
+            <h2>{{ error }}</h2>
+            <p>{{ message }}</p>
+            
+            <div class="instructions">
+                <h3>How to fix:</h3>
+                <p>1. Go back to the Telegram bot (@{{ bot_username }})</p>
+                <p>2. Send /start command</p>
+                <p>3. Click the WebApp button</p>
+                <p>4. Follow the instructions</p>
+            </div>
+            
+            <button class="btn" onclick="goBack()">
+                ↩ Go Back to Bot
+            </button>
+            
+            <p style="color: #999; font-size: 14px; margin-top: 20px;">
+                If problem persists, contact support
+            </p>
+        </div>
+    </div>
+
+    <script>
+        function goBack() {
+            if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+                Telegram.WebApp.close();
+            } else {
+                window.location.href = 'https://t.me/' + '{{ bot_username }}';
+            }
+        }
+        
+        // Initialize Telegram WebApp
+        if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+            Telegram.WebApp.ready();
+            Telegram.WebApp.expand();
+            Telegram.WebApp.setHeaderColor('#ff6b6b');
+        }
+    </script>
+</body>
+</html>
