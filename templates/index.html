@@ -30,6 +30,7 @@
         .status { padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: center; }
         .status.waiting { background: #fff3e0; color: #f57c00; border-left: 4px solid #ff9800; }
         .status.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
+        .debug-info { background: #f5f5f5; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
@@ -78,28 +79,51 @@
                 </div>
                 
                 <button class="btn" onclick="checkStatus()" style="background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);">
-                    ✅ I've Shared Contact - Continue
+                    🔄 Check Contact Status
                 </button>
                 
                 <button class="btn" onclick="forceContinue()" style="background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%); margin-top: 10px;">
-                    🚀 Skip to OTP Page
+                    🚀 Continue to OTP Page
                 </button>
+            </div>
+            
+            <!-- Debug Info -->
+            <div class="debug-info" id="debug-info">
+                <p><strong>Debug Info:</strong></p>
+                <p>Session ID: <span id="debug-session">{{ session_id }}</span></p>
+                <p>User ID: <span id="debug-user">{{ user_id }}</span></p>
+                <p>Status: <span id="debug-status">Ready</span></p>
             </div>
         </div>
     </div>
 
     <script>
-        const sessionId = "{{ session_id }}";
-        const userId = "{{ user_id }}";
+        // Store session data
+        let sessionData = {
+            sessionId: "{{ session_id }}",
+            userId: "{{ user_id }}",
+            checking: false
+        };
+        
         let tg = null;
+        let checkInterval = null;
         
         document.addEventListener('DOMContentLoaded', function() {
             console.log("✅ Verify page loaded");
-            console.log("Session ID:", sessionId);
-            console.log("User ID:", userId);
+            console.log("Session ID:", sessionData.sessionId);
+            console.log("User ID:", sessionData.userId);
+            
+            // Update debug info
+            document.getElementById('debug-session').textContent = sessionData.sessionId || "Not set";
+            document.getElementById('debug-user').textContent = sessionData.userId || "Not set";
             
             // Check if already verified
-            checkSession();
+            if (sessionData.sessionId) {
+                checkSessionStatus();
+            } else {
+                showError("Session ID missing. Please open from bot /start command.");
+                document.getElementById('share-contact-btn').disabled = true;
+            }
             
             // Initialize Telegram WebApp
             if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
@@ -114,16 +138,23 @@
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner"></div> Opening contact picker...';
             
+            showStatus("Opening Telegram contact picker...", 'waiting');
+            
             // Use Telegram's contact picker
             if (tg && tg.requestContact) {
                 tg.requestContact(function(contactShared) {
                     if (contactShared) {
                         showSuccess("✅ Contact shared! Check bot chat for OTP.");
                         document.getElementById('waiting-section').classList.remove('hidden');
+                        document.getElementById('debug-status').textContent = "Contact Shared";
                         
-                        // Start checking status
+                        // Start checking status every 3 seconds
+                        startStatusChecking();
+                        
+                        // Enable button again after 2 seconds
                         setTimeout(() => {
-                            checkStatus();
+                            btn.disabled = false;
+                            btn.innerHTML = '<span>📱 Share Contact via Telegram</span>';
                         }, 2000);
                     } else {
                         showError("Contact sharing cancelled");
@@ -132,66 +163,89 @@
                     }
                 });
             } else {
-                // Fallback
-                showSuccess("Please share your contact with @{{ bot_username }}");
+                // Fallback for non-Telegram browsers
+                showSuccess("Please share your contact with @{{ bot_username }} bot");
                 document.getElementById('waiting-section').classList.remove('hidden');
+                document.getElementById('debug-status').textContent = "Manual Share Needed";
+                
                 btn.disabled = false;
                 btn.innerHTML = '<span>📱 Share Contact via Telegram</span>';
+                
+                startStatusChecking();
             }
         }
         
-        function checkSession() {
-            if (!sessionId) return;
+        function checkSessionStatus() {
+            if (!sessionData.sessionId) {
+                showError("Session ID missing. Cannot check status.");
+                return;
+            }
             
-            fetch(`/api/check-session/${sessionId}`)
-            .then(response => response.json())
+            if (sessionData.checking) return;
+            sessionData.checking = true;
+            
+            fetch(`/api/check-session/${sessionData.sessionId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
-                if (data.success && data.session.contact_shared) {
-                    // Contact already shared, go to OTP page
-                    window.location.href = `/otp?session_id=${sessionId}`;
+                console.log("Session check response:", data);
+                
+                if (data.success) {
+                    document.getElementById('debug-status').textContent = data.session.status;
+                    
+                    if (data.session.contact_shared) {
+                        // Contact already shared, go to OTP page
+                        showSuccess("✅ Contact verified! Going to OTP page...");
+                        clearInterval(checkInterval);
+                        
+                        setTimeout(() => {
+                            window.location.href = `/otp?session_id=${sessionData.sessionId}`;
+                        }, 1500);
+                    } else {
+                        showStatus("Waiting for contact to be processed...", 'waiting');
+                    }
+                } else {
+                    showError("Session error: " + (data.error || "Unknown"));
+                    document.getElementById('debug-status').textContent = "Error: " + data.error;
                 }
             })
             .catch(error => {
-                console.log("Session check:", error);
+                console.error("Session check error:", error);
+                document.getElementById('debug-status').textContent = "Network Error";
+            })
+            .finally(() => {
+                sessionData.checking = false;
             });
         }
         
         function checkStatus() {
-            if (!sessionId) {
-                showError("Session ID missing");
-                return;
-            }
+            checkSessionStatus();
+        }
+        
+        function startStatusChecking() {
+            // Clear any existing interval
+            if (checkInterval) clearInterval(checkInterval);
             
-            fetch(`/api/check-session/${sessionId}`)
-            .then(response => response.json())
-            .then(data => {
-                console.log("Status check:", data);
-                
-                if (data.success) {
-                    if (data.session.contact_shared) {
-                        // Go to OTP page
-                        showSuccess("✅ Contact verified! Going to OTP page...");
-                        setTimeout(() => {
-                            window.location.href = `/otp?session_id=${sessionId}`;
-                        }, 1500);
-                    } else {
-                        showError("Contact not shared yet. Please share your contact with the bot.");
-                    }
-                } else {
-                    showError("Session error: " + (data.error || "Unknown"));
-                }
-            })
-            .catch(error => {
-                console.error("Status check error:", error);
-                showError("Network error. Please try again.");
-            });
+            // Check immediately
+            checkSessionStatus();
+            
+            // Then check every 3 seconds
+            checkInterval = setInterval(() => {
+                checkSessionStatus();
+            }, 3000);
         }
         
         function forceContinue() {
             // Force continue to OTP page
             showSuccess("Redirecting to OTP page...");
+            clearInterval(checkInterval);
+            
             setTimeout(() => {
-                window.location.href = `/otp?session_id=${sessionId}`;
+                window.location.href = `/otp?session_id=${sessionData.sessionId}`;
             }, 1000);
         }
         
@@ -209,12 +263,11 @@
             setTimeout(() => alert.classList.remove('show'), 3000);
         }
         
-        // Auto-check every 5 seconds when waiting
-        setInterval(() => {
-            if (!document.getElementById('waiting-section').classList.contains('hidden')) {
-                checkStatus();
-            }
-        }, 5000);
+        function showStatus(message, type) {
+            const status = document.getElementById('status-message');
+            status.textContent = message;
+            status.className = 'status ' + type;
+        }
     </script>
 </body>
 </html>
