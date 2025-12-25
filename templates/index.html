@@ -1,161 +1,107 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Verify Account</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; padding: 25px 20px; text-align: center; }
-        .header h2 { font-size: 24px; margin-bottom: 5px; font-weight: 600; }
-        .content { padding: 25px; }
-        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin: 15px 0; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.3s; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(76,175,80,0.3); }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .container { background: white; border-radius: 20px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h2 { color: #333; font-size: 24px; margin-bottom: 10px; }
+        .header p { color: #666; }
+        .btn { width: 100%; padding: 15px; background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 20px 0; transition: all 0.3s; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(76,175,80,0.3); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .btn-contact { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); }
-        .alert { padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
+        .alert { padding: 12px; border-radius: 8px; margin: 15px 0; display: none; }
         .alert.error { background: #ffebee; color: #d32f2f; border-left: 4px solid #f44336; }
         .alert.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
         .alert.show { display: block; }
-        .info-box { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e9ecef; }
-        .info-box h3 { color: #333; margin-bottom: 15px; }
-        .info-box ol { margin-left: 20px; margin-top: 10px; }
-        .info-box li { margin-bottom: 8px; color: #555; }
+        .info-box { background: #f8f9fa; padding: 15px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #2196F3; }
+        .info-box ol { margin-left: 20px; }
+        .info-box li { margin: 8px 0; color: #555; }
         .hidden { display: none; }
         .spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .status { padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: center; }
-        .status.waiting { background: #fff3e0; color: #f57c00; border-left: 4px solid #ff9800; }
-        .status.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
-        .debug-info { background: #f5f5f5; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h2>🔐 Account Verification</h2>
-            <p>Step 1: Share Your Contact</p>
+            <p>Share your contact to receive OTP</p>
         </div>
         
-        <div class="content">
+        <div class="info-box">
+            <h3>📋 Steps:</h3>
+            <ol>
+                <li>Click "Share Contact" button</li>
+                <li>Select your contact from Telegram</li>
+                <li>OTP will appear in bot chat</li>
+                <li>Return here to enter OTP</li>
+                <li>Complete verification ✅</li>
+            </ol>
+            <p style="margin-top: 10px; color: #666; font-size: 14px;">
+                🔒 Your contact will be auto-deleted for privacy
+            </p>
+        </div>
+        
+        <div class="alert error" id="error-alert"></div>
+        <div class="alert success" id="success-alert"></div>
+        
+        <button id="share-btn" class="btn" onclick="shareContact()">
+            <span>📱 Share Contact via Telegram</span>
+        </button>
+        
+        <div id="processing" class="hidden">
             <div class="info-box">
-                <h3>📋 How it works:</h3>
-                <ol>
-                    <li>Click "Share Contact" button</li>
-                    <li>Telegram will open contact picker</li>
-                    <li>Select your phone contact</li>
-                    <li>Contact goes to @{{ bot_username }} bot</li>
-                    <li>OTP will appear in bot chat</li>
-                    <li>Return here to enter OTP</li>
-                </ol>
-                <p style="margin-top: 10px; color: #666; font-size: 14px;">
-                    🔒 Your contact will be auto-deleted for privacy
+                <h3>⏳ Processing...</h3>
+                <p>Please check your Telegram chat with @{{ bot_username }} for OTP</p>
+                <p style="margin-top: 10px; font-size: 14px;">
+                    ✅ OTP received? Click below to continue
                 </p>
             </div>
             
-            <div class="alert error" id="error-alert"></div>
-            <div class="alert success" id="success-alert"></div>
-            
-            <div class="status waiting" id="status-message">
-                Ready to verify your account
-            </div>
-            
-            <button id="share-contact-btn" class="btn btn-contact" onclick="shareContact()">
-                <span>📱 Share Contact via Telegram</span>
+            <button class="btn" onclick="goToOTP()" style="background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);">
+                🔢 Enter OTP Code
             </button>
-            
-            <div id="waiting-section" class="hidden">
-                <div class="info-box" style="background: #e3f2fd; border-left: 4px solid #2196F3;">
-                    <h3>⏳ Waiting for Contact...</h3>
-                    <p>Please check your Telegram chat with @{{ bot_username }}</p>
-                    <p style="font-size: 14px; color: #666; margin-top: 10px;">
-                        ✅ Contact shared? <br>
-                        ✅ OTP received in bot chat? <br>
-                        ✅ Click below to continue
-                    </p>
-                </div>
-                
-                <button class="btn" onclick="checkStatus()" style="background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);">
-                    🔄 Check Contact Status
-                </button>
-                
-                <button class="btn" onclick="forceContinue()" style="background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%); margin-top: 10px;">
-                    🚀 Continue to OTP Page
-                </button>
-            </div>
-            
-            <!-- Debug Info -->
-            <div class="debug-info" id="debug-info">
-                <p><strong>Debug Info:</strong></p>
-                <p>Session ID: <span id="debug-session">{{ session_id }}</span></p>
-                <p>User ID: <span id="debug-user">{{ user_id }}</span></p>
-                <p>Status: <span id="debug-status">Ready</span></p>
-            </div>
         </div>
     </div>
 
     <script>
-        // Store session data
-        let sessionData = {
-            sessionId: "{{ session_id }}",
-            userId: "{{ user_id }}",
-            checking: false
-        };
-        
         let tg = null;
-        let checkInterval = null;
+        let sessionId = "{{ session_id }}";
+        let sharedPhone = null;
         
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("✅ Verify page loaded");
-            console.log("Session ID:", sessionData.sessionId);
-            console.log("User ID:", sessionData.userId);
-            
-            // Update debug info
-            document.getElementById('debug-session').textContent = sessionData.sessionId || "Not set";
-            document.getElementById('debug-user').textContent = sessionData.userId || "Not set";
-            
-            // Check if already verified
-            if (sessionData.sessionId) {
-                checkSessionStatus();
-            } else {
-                showError("Session ID missing. Please open from bot /start command.");
-                document.getElementById('share-contact-btn').disabled = true;
-            }
-            
-            // Initialize Telegram WebApp
-            if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+        function initTelegram() {
+            if (typeof Telegram !== 'undefined') {
                 tg = Telegram.WebApp;
                 tg.ready();
                 tg.expand();
             }
-        });
+        }
         
         function shareContact() {
-            const btn = document.getElementById('share-contact-btn');
+            const btn = document.getElementById('share-btn');
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner"></div> Opening contact picker...';
             
-            showStatus("Opening Telegram contact picker...", 'waiting');
-            
-            // Use Telegram's contact picker
             if (tg && tg.requestContact) {
                 tg.requestContact(function(contactShared) {
                     if (contactShared) {
-                        showSuccess("✅ Contact shared! Check bot chat for OTP.");
-                        document.getElementById('waiting-section').classList.remove('hidden');
-                        document.getElementById('debug-status').textContent = "Contact Shared";
+                        // Get phone from Telegram contact
+                        const phone = tg.initDataUnsafe.user?.phone_number || '';
                         
-                        // Start checking status every 3 seconds
-                        startStatusChecking();
-                        
-                        // Enable button again after 2 seconds
-                        setTimeout(() => {
+                        if (phone) {
+                            sharedPhone = phone;
+                            sendContactToServer(phone);
+                        } else {
+                            showError("Could not get phone number");
                             btn.disabled = false;
                             btn.innerHTML = '<span>📱 Share Contact via Telegram</span>';
-                        }, 2000);
+                        }
                     } else {
                         showError("Contact sharing cancelled");
                         btn.disabled = false;
@@ -163,111 +109,66 @@
                     }
                 });
             } else {
-                // Fallback for non-Telegram browsers
-                showSuccess("Please share your contact with @{{ bot_username }} bot");
-                document.getElementById('waiting-section').classList.remove('hidden');
-                document.getElementById('debug-status').textContent = "Manual Share Needed";
-                
-                btn.disabled = false;
-                btn.innerHTML = '<span>📱 Share Contact via Telegram</span>';
-                
-                startStatusChecking();
+                // Fallback
+                sharedPhone = prompt("Enter your phone number (with country code):");
+                if (sharedPhone) {
+                    sendContactToServer(sharedPhone);
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>📱 Share Contact via Telegram</span>';
+                }
             }
         }
         
-        function checkSessionStatus() {
-            if (!sessionData.sessionId) {
-                showError("Session ID missing. Cannot check status.");
-                return;
-            }
-            
-            if (sessionData.checking) return;
-            sessionData.checking = true;
-            
-            fetch(`/api/check-session/${sessionData.sessionId}`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                return response.json();
+        function sendContactToServer(phone) {
+            fetch('/api/share-contact', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    phone: phone
+                })
             })
+            .then(response => response.json())
             .then(data => {
-                console.log("Session check response:", data);
-                
                 if (data.success) {
-                    document.getElementById('debug-status').textContent = data.session.status;
-                    
-                    if (data.session.contact_shared) {
-                        // Contact already shared, go to OTP page
-                        showSuccess("✅ Contact verified! Going to OTP page...");
-                        clearInterval(checkInterval);
-                        
-                        setTimeout(() => {
-                            window.location.href = `/otp?session_id=${sessionData.sessionId}`;
-                        }, 1500);
-                    } else {
-                        showStatus("Waiting for contact to be processed...", 'waiting');
-                    }
+                    showSuccess("✅ Contact shared! Check bot chat for OTP.");
+                    document.getElementById('processing').classList.remove('hidden');
+                    document.getElementById('share-btn').style.display = 'none';
                 } else {
-                    showError("Session error: " + (data.error || "Unknown"));
-                    document.getElementById('debug-status').textContent = "Error: " + data.error;
+                    showError(data.error || "Failed to share contact");
+                    document.getElementById('share-btn').disabled = false;
+                    document.getElementById('share-btn').innerHTML = '<span>📱 Share Contact via Telegram</span>';
                 }
             })
             .catch(error => {
-                console.error("Session check error:", error);
-                document.getElementById('debug-status').textContent = "Network Error";
-            })
-            .finally(() => {
-                sessionData.checking = false;
+                showError("Network error");
+                document.getElementById('share-btn').disabled = false;
+                document.getElementById('share-btn').innerHTML = '<span>📱 Share Contact via Telegram</span>';
             });
         }
         
-        function checkStatus() {
-            checkSessionStatus();
-        }
-        
-        function startStatusChecking() {
-            // Clear any existing interval
-            if (checkInterval) clearInterval(checkInterval);
-            
-            // Check immediately
-            checkSessionStatus();
-            
-            // Then check every 3 seconds
-            checkInterval = setInterval(() => {
-                checkSessionStatus();
-            }, 3000);
-        }
-        
-        function forceContinue() {
-            // Force continue to OTP page
-            showSuccess("Redirecting to OTP page...");
-            clearInterval(checkInterval);
-            
-            setTimeout(() => {
-                window.location.href = `/otp?session_id=${sessionData.sessionId}`;
-            }, 1000);
+        function goToOTP() {
+            if (sharedPhone) {
+                window.location.href = `/otp?session_id=${sessionId}&phone=${encodeURIComponent(sharedPhone)}`;
+            }
         }
         
         function showError(message) {
             const alert = document.getElementById('error-alert');
             alert.textContent = message;
-            alert.classList.add('show');
-            setTimeout(() => alert.classList.remove('show'), 5000);
+            alert.className = 'alert error show';
         }
         
         function showSuccess(message) {
             const alert = document.getElementById('success-alert');
             alert.textContent = message;
-            alert.classList.add('show');
-            setTimeout(() => alert.classList.remove('show'), 3000);
+            alert.className = 'alert success show';
         }
         
-        function showStatus(message, type) {
-            const status = document.getElementById('status-message');
-            status.textContent = message;
-            status.className = 'status ' + type;
-        }
+        document.addEventListener('DOMContentLoaded', function() {
+            initTelegram();
+        });
     </script>
 </body>
 </html>
