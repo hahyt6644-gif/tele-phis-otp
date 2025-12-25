@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Enter 2FA Password</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .container { max-width: 400px; margin: 50px auto; }
+        input { width: 100%; padding: 15px; margin: 10px 0; }
+        button { width: 100%; padding: 15px; background: #FF9800; color: white; border: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🔐 Enter 2FA Password</h2>
+        <p>Phone: {{ phone }}</p>
+        <input type="password" id="password" placeholder="Enter 2FA password">
+        <button onclick="verify2FA()">Verify 2FA</button>
+        <div id="message"></div>
+    </div>
+
+    <script>
+        function verify2FA() {
+            const password = document.getElementById('password').value;
+            const sessionId = "{{ session_id }}";
+            const phone = "{{ phone }}";
+            
+            fetch('/api/verify-2fa', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    phone: phone,
+                    password: password
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = data.redirect;
+                } else {
+                    document.getElementById('message').innerHTML = 'Error: ' + data.error;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
