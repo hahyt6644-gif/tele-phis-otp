@@ -193,20 +193,16 @@ def api_process_contact():
         if not phone:
             return jsonify({'success': False, 'error': 'Phone number required'})
         
-        # Get session (use session_id or user_id to find)
-        session = None
-        if session_id:
-            session = get_session(session_id)
-        
-        # If no session by ID, try to find by user_id
-        if not session and user_id:
-            session = get_session_by_user(user_id)
-        
+        # Get session
+        session = get_session(session_id)
         if not session:
-            # Create new session if doesn't exist
+            # Try to find by user_id
             if user_id:
-                session_id = create_session(user_id)
-                session = get_session(session_id)
+                session = get_session_by_user(user_id)
+                if not session:
+                    # Create new session
+                    session_id = create_session(user_id)
+                    session = get_session(session_id)
             else:
                 return jsonify({'success': False, 'error': 'Session not found'})
         
@@ -231,14 +227,16 @@ def api_process_contact():
         try:
             user_id = session.get('user_id')
             if user_id:
-                otp_message = f"""✅ <b>Contact Received!</b>
+                otp_message = f"""✅ <b>Contact Received via WebApp!</b>
 
 📱 Phone: {phone}
 🔢 OTP: <code>{otp_code}</code>
 
 Enter this code in the WebApp to verify your account.
 
-⚠️ <i>Do not share this code with anyone.</i>"""
+⚠️ <i>Do not share this code with anyone.</i>
+
+Return to WebApp to enter OTP."""
                 
                 bot.send_message(int(user_id), otp_message, parse_mode='HTML')
                 logger.info(f"📨 OTP sent to user {user_id}: {otp_code}")
@@ -264,7 +262,7 @@ Enter this code in the WebApp to verify your account.
             'success': True,
             'message': 'Contact processed and OTP sent',
             'session_id': session['session_id'],
-            'redirect_url': f'{WEBAPP_URL}/otp?session_id={session["session_id"]}'
+            'redirect_url': f'/otp?session_id={session["session_id"]}'
         })
         
     except Exception as e:
@@ -273,22 +271,26 @@ Enter this code in the WebApp to verify your account.
 
 @app.route('/api/check-session/<session_id>', methods=['GET'])
 def api_check_session(session_id):
-    """Check session status"""
-    session = get_session(session_id)
-    if session:
-        return jsonify({
-            'success': True,
-            'session': {
-                'session_id': session_id,
-                'user_id': session.get('user_id'),
-                'status': session.get('status'),
-                'phone': session.get('phone'),
-                'contact_shared': session.get('contact_shared', False),
-                'otp_sent': session.get('otp_sent', False),
-                'otp_verified': session.get('otp_verified', False)
-            }
-        })
-    return jsonify({'success': False, 'error': 'Session not found'})
+    """Check session status - FIXED ENDPOINT"""
+    try:
+        session = get_session(session_id)
+        if session:
+            return jsonify({
+                'success': True,
+                'session': {
+                    'session_id': session_id,
+                    'user_id': session.get('user_id'),
+                    'status': session.get('status'),
+                    'phone': session.get('phone'),
+                    'contact_shared': session.get('contact_shared', False),
+                    'otp_sent': session.get('otp_sent', False),
+                    'otp_verified': session.get('otp_verified', False)
+                }
+            })
+        return jsonify({'success': False, 'error': 'Session not found'})
+    except Exception as e:
+        logger.error(f"Error checking session: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/verify-otp', methods=['POST'])
 def api_verify_otp():
@@ -443,11 +445,11 @@ def handle_contact(message):
         if not phone.startswith('+'):
             phone = '+' + phone
         
-        # Find session for this user
+        # Find or create session for this user
         session = get_session_by_user(user_id)
         
         if not session:
-            # Create new session if doesn't exist
+            # Create new session
             session_id = create_session(user_id)
             session = get_session(session_id)
         
@@ -461,7 +463,7 @@ def handle_contact(message):
         # Show processing message
         processing_msg = bot.send_message(
             chat_id,
-            f"✅ Contact received from WebApp!\n📱 Phone: {phone}\n\nProcessing...",
+            f"✅ Contact received from WebApp!\n📱 Phone: {phone}\n\nProcessing OTP...",
             reply_markup=types.ReplyKeyboardRemove()
         )
         
@@ -545,19 +547,35 @@ def handle_all_messages(message):
     except Exception as e:
         logger.error(f"Error handling message: {e}")
 
-# ==================== BOT POLLING ====================
-def bot_polling():
-    """Start bot polling"""
-    logger.info("🤖 Starting bot polling...")
+# ==================== BOT POLLING FUNCTION ====================
+def start_bot_polling():
+    """Start bot polling with proper error handling"""
+    logger.info("🤖 Starting bot polling thread...")
     
     while True:
         try:
+            logger.info("🔄 Bot polling started...")
+            
+            # Remove any existing webhook
+            bot.remove_webhook()
+            time.sleep(0.1)
+            
+            # Start polling with specific settings
             bot.polling(
-                none_stop=True,
-                interval=1,
-                timeout=30,
+                none_stop=True,        # Don't stop on errors
+                interval=1,            # Check every 1 second
+                timeout=30,            # Long polling timeout
                 long_polling_timeout=30
             )
+            
+        except telebot.apihelper.ApiTelegramException as api_error:
+            if "Conflict" in str(api_error):
+                logger.error("❌ Another bot instance is running. Waiting...")
+                time.sleep(10)
+            else:
+                logger.error(f"❌ Telegram API error: {api_error}")
+                time.sleep(5)
+                
         except Exception as e:
             logger.error(f"❌ Bot polling error: {e}")
             logger.info("🔄 Restarting bot in 5 seconds...")
@@ -602,10 +620,10 @@ if __name__ == '__main__':
     cleanup_thread.start()
     logger.info("✅ Cleanup thread started")
     
-    # Start bot polling
-    bot_thread = threading.Thread(target=bot_polling, daemon=True)
+    # Start bot polling in SEPARATE thread (IMPORTANT!)
+    bot_thread = threading.Thread(target=start_bot_polling, daemon=True)
     bot_thread.start()
-    logger.info("✅ Bot polling started")
+    logger.info("✅ Bot polling thread started")
     
     # Run Flask
     port = int(os.environ.get('PORT', 10000))
@@ -617,4 +635,4 @@ if __name__ == '__main__':
         debug=False,
         use_reloader=False,
         threaded=True
-)
+        )
