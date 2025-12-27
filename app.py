@@ -216,7 +216,7 @@ async def verify_otp_async(phone, otp, phone_code_hash):
             }
             
             # Save session
-            await client.session.save()
+            client.session.save()
             session_path = f"{client.session.filename}.session"
             
             return {
@@ -275,7 +275,7 @@ async def verify_2fa_async(session_name, password):
             }
             
             # Save session
-            await client.session.save()
+            client.session.save()
             session_path = f"{client.session.filename}.session"
             
             return {
@@ -858,4 +858,4 @@ if __name__ == "__main__":
         debug=False,
         use_reloader=False,
         threaded=True
-    )
+                    )
